@@ -1,0 +1,1860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0"/>
+<meta name="theme-color" content="#080b08"/>
+<title>CricAuction Pro 🏏</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, update, onValue, push, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// ─── PASTE YOUR FIREBASE CONFIG HERE ───────────────────────────
+// Get it free at: https://console.firebase.google.com
+// Create project → Realtime Database → Start in test mode → copy config
+const firebaseConfig = {
+  apiKey: "PASTE_YOUR_API_KEY",
+  authDomain: "PASTE_YOUR_AUTH_DOMAIN",
+  databaseURL: "PASTE_YOUR_DATABASE_URL",
+  projectId: "PASTE_YOUR_PROJECT_ID",
+  storageBucket: "PASTE_YOUR_STORAGE_BUCKET",
+  messagingSenderId: "PASTE_YOUR_MESSAGING_SENDER_ID",
+  appId: "PASTE_YOUR_APP_ID"
+};
+// ────────────────────────────────────────────────────────────────
+
+let app, db;
+let firebaseReady = false;
+
+try {
+  app = initializeApp(firebaseConfig);
+  db = getDatabase(app);
+  firebaseReady = firebaseConfig.databaseURL !== "PASTE_YOUR_DATABASE_URL";
+} catch(e) {
+  console.warn("Firebase not configured, using localStorage fallback");
+}
+
+// Expose to window so non-module scripts can call
+window._fb = { db, ref, set, get, update, onValue, push, serverTimestamp, firebaseReady };
+</script>
+
+<style>
+/* ═══════════════════════ RESET & VARS ═══════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --g:#16a34a;--gl:#22c55e;--gx:#4ade80;
+  --bg:#070909;--s1:#0c0f0c;--s2:#101410;--s3:#161b16;--s4:#1c221c;
+  --bd:#1e271e;--bd2:#28342a;
+  --t1:#eef2ee;--t2:#96a896;--t3:#546354;
+  --red:#f43f5e;--amber:#f59e0b;--blue:#38bdf8;--purple:#a78bfa;
+  --r:10px;--r2:14px;--r3:18px;--r4:24px;
+  --shadow: 0 4px 24px rgba(0,0,0,.5);
+  --font-display:'Instrument Serif',serif;
+  --font-body:'Syne',sans-serif;
+}
+html{scroll-behavior:smooth;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--t1);font-family:var(--font-body);font-size:14px;line-height:1.5;min-height:100vh;overflow-x:hidden}
+input,textarea,select,button{font-family:inherit;font-size:inherit}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:4px}
+
+/* ═══════════════════════ UTILS ═══════════════════════ */
+.hidden{display:none!important}
+.green{color:var(--gl)}
+.muted{color:var(--t2)}
+.dimmed{color:var(--t3)}
+.bold{font-weight:700}
+.serif{font-family:var(--font-display)}
+.small{font-size:.78rem}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ═══════════════════════ BUTTONS ═══════════════════════ */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--r);border:none;font-weight:700;font-size:.82rem;transition:all .15s;line-height:1;letter-spacing:.01em;white-space:nowrap;cursor:pointer}
+.btn-primary{background:var(--gl);color:#000}.btn-primary:hover{background:var(--gx);transform:translateY(-1px)}.btn-primary:active{transform:translateY(0)}
+.btn-outline{background:transparent;color:var(--t1);border:1.5px solid var(--bd2)}.btn-outline:hover{border-color:var(--gl);color:var(--gl)}
+.btn-ghost{background:transparent;color:var(--t2);border:none}.btn-ghost:hover{color:var(--t1)}
+.btn-danger{background:rgba(244,63,94,.15);color:var(--red);border:1px solid rgba(244,63,94,.25)}.btn-danger:hover{background:var(--red);color:#fff}
+.btn-amber{background:var(--amber);color:#000}.btn-amber:hover{filter:brightness(1.1)}
+.btn-blue{background:rgba(56,189,248,.15);color:var(--blue);border:1px solid rgba(56,189,248,.2)}.btn-blue:hover{background:var(--blue);color:#000}
+.btn-sm{padding:6px 12px;font-size:.76rem}
+.btn-lg{padding:13px 28px;font-size:.95rem}
+.btn-xl{padding:16px 36px;font-size:1.05rem;border-radius:var(--r2)}
+.btn-icon{width:34px;height:34px;padding:0;border-radius:var(--r)}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none!important;filter:none!important}
+.btn-w{width:100%}
+
+/* ═══════════════════════ INPUTS ═══════════════════════ */
+.input{background:var(--s2);border:1.5px solid var(--bd);border-radius:var(--r);padding:9px 13px;color:var(--t1);width:100%;outline:none;transition:border-color .15s;font-family:var(--font-body)}
+.input:focus{border-color:var(--gl);background:var(--s3)}
+.input::placeholder{color:var(--t3)}
+.label{font-size:.76rem;font-weight:700;color:var(--t2);margin-bottom:5px;display:block;letter-spacing:.04em;text-transform:uppercase}
+.field{display:flex;flex-direction:column;gap:3px;margin-bottom:11px}
+.field:last-child{margin-bottom:0}
+
+/* ═══════════════════════ CARDS ═══════════════════════ */
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r2)}
+.card-p{padding:20px}
+.card-sm{border-radius:var(--r)}
+
+/* ═══════════════════════ BADGE ═══════════════════════ */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:100px}
+.badge-green{background:rgba(22,197,94,.12);color:var(--gl);border:1px solid rgba(22,197,94,.2)}
+.badge-amber{background:rgba(245,158,11,.12);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
+.badge-red{background:rgba(244,63,94,.12);color:var(--red);border:1px solid rgba(244,63,94,.2)}
+.badge-blue{background:rgba(56,189,248,.12);color:var(--blue);border:1px solid rgba(56,189,248,.2)}
+.badge-purple{background:rgba(167,139,250,.12);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
+.badge-ghost{background:var(--s3);color:var(--t2);border:1px solid var(--bd2)}
+
+/* ═══════════════════════ NAV ═══════════════════════ */
+#topnav{position:fixed;top:0;left:0;right:0;z-index:500;height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:rgba(7,9,9,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--bd)}
+.nav-logo{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-size:1.15rem;color:#fff;text-decoration:none}
+.nav-logo-icon{width:30px;height:30px;border-radius:8px;background:var(--gl);display:flex;align-items:center;justify-content:center;font-size:.95rem}
+.nav-right{display:flex;align-items:center;gap:8px}
+.nav-user{display:flex;align-items:center;gap:10px;padding:5px 6px 5px 10px;background:var(--s2);border:1px solid var(--bd);border-radius:999px;max-width:min(58vw,320px)}
+.nav-user-pic{width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--s3)}
+.nav-user-meta{min-width:0}
+.nav-user-name{font-size:.8rem;font-weight:700;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-user-email{font-size:.68rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.auth-panel{padding-top:4px}
+.auth-card{background:var(--s2);border:1px solid var(--bd);border-radius:var(--r2);padding:18px}
+.auth-copy{font-size:.82rem;color:var(--t2);line-height:1.7;margin-bottom:16px}
+#google-signin-slot{display:flex;justify-content:center;min-height:44px}
+.auth-note{font-size:.72rem;color:var(--t3);text-align:center;margin-top:12px}
+
+@media(max-width:560px){
+  .nav-user{max-width:calc(100vw - 140px)}
+  .nav-user-email{display:none}
+}
+
+/* ═══════════════════════ PAGES ═══════════════════════ */
+.page{display:none;min-height:calc(100vh - 54px);padding-top:54px}
+.page.active{display:block}
+
+/* ═══════════════════════ TOAST ═══════════════════════ */
+#toasts{position:fixed;bottom:20px;right:16px;left:16px;max-width:360px;margin:0 auto;display:flex;flex-direction:column;gap:8px;z-index:900;pointer-events:none}
+@media(min-width:500px){#toasts{left:auto;right:20px}}
+.toast{background:var(--s2);border:1px solid var(--bd2);border-radius:var(--r);padding:11px 15px;font-size:.82rem;font-weight:600;display:flex;align-items:center;gap:8px;box-shadow:var(--shadow);pointer-events:all;animation:toastIn .22s ease}
+.toast.success{border-left:3px solid var(--gl)}
+.toast.error{border-left:3px solid var(--red)}
+.toast.info{border-left:3px solid var(--blue)}
+@keyframes toastIn{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* ═══════════════════════ MODAL ═══════════════════════ */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:600;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+@media(min-width:520px){.overlay{align-items:center}}
+.overlay.open{opacity:1;pointer-events:all}
+.modal-sheet{background:var(--s1);border:1px solid var(--bd2);border-radius:var(--r3) var(--r3) 0 0;padding:24px 20px 32px;width:100%;max-width:500px;transform:translateY(30px);transition:transform .25s cubic-bezier(.34,1.36,.64,1)}
+@media(min-width:520px){.modal-sheet{border-radius:var(--r3);transform:scale(.94)}}
+.overlay.open .modal-sheet{transform:translateY(0) scale(1)}
+.modal-handle{width:40px;height:4px;background:var(--bd2);border-radius:2px;margin:0 auto 20px;display:block}
+@media(min-width:520px){.modal-handle{display:none}}
+.modal-title{font-family:var(--font-display);font-size:1.5rem;color:#fff;margin-bottom:4px}
+.modal-sub{font-size:.82rem;color:var(--t2);margin-bottom:20px}
+
+/* ═══════════════════════ TABS ═══════════════════════ */
+.tabs{display:flex;gap:2px;background:var(--s2);padding:3px;border-radius:var(--r);margin-bottom:20px}
+.tab{flex:1;padding:7px;border-radius:8px;border:none;background:transparent;color:var(--t3);font-weight:700;font-size:.78rem;cursor:pointer;transition:all .15s;letter-spacing:.02em}
+.tab.active{background:var(--s4);color:var(--t1)}
+
+/* ═══════════════════════ SETUP SCREEN ═══════════════════════ */
+#page-setup{background:radial-gradient(ellipse 80% 50% at 50% -5%,rgba(22,163,74,.14) 0%,transparent 65%),var(--bg)}
+.setup-hero{text-align:center;padding:56px 20px 40px;max-width:720px;margin:0 auto}
+.setup-chip{display:inline-flex;align-items:center;gap:6px;font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--gl);background:rgba(22,197,94,.1);border:1px solid rgba(22,197,94,.2);padding:5px 14px;border-radius:100px;margin-bottom:22px}
+.setup-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--gl);animation:blink 1.2s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.setup-h1{font-family:var(--font-display);font-size:clamp(2.4rem,8vw,4rem);line-height:1.1;color:#fff;margin-bottom:14px}
+.setup-h1 em{font-style:italic;color:var(--gl)}
+.setup-sub{color:var(--t2);font-size:.95rem;max-width:400px;margin:0 auto 32px;line-height:1.7}
+.setup-btns{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
+.setup-note{margin-top:14px;font-size:.73rem;color:var(--t3)}
+
+.feat-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;max-width:860px;margin:40px auto 0;padding:0 16px}
+.feat-item{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r2);padding:20px 18px}
+.feat-item-icon{font-size:1.4rem;margin-bottom:10px}
+.feat-item h3{font-size:.86rem;font-weight:700;color:#fff;margin-bottom:5px}
+.feat-item p{font-size:.76rem;color:var(--t2);line-height:1.6}
+
+/* ═══════════════════════ FIREBASE SETUP BANNER ═══════════════════════ */
+#fb-banner{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:var(--r2);padding:14px 16px;margin:0 16px 16px;display:none}
+#fb-banner.show{display:block}
+.fb-banner-title{font-size:.82rem;font-weight:700;color:var(--amber);margin-bottom:6px}
+.fb-banner-steps{font-size:.76rem;color:var(--t2);line-height:1.8}
+.fb-banner-steps a{color:var(--blue);text-decoration:underline}
+.fb-banner-form{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+
+/* ═══════════════════════ LOBBY ═══════════════════════ */
+#page-lobby{padding-top:54px}
+.lobby-wrap{max-width:1100px;margin:0 auto;padding:20px 14px}
+.lobby-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.room-title{font-family:var(--font-display);font-size:1.6rem;color:#fff;line-height:1.2}
+.code-pill{display:inline-flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--bd2);border-radius:var(--r);padding:8px 14px}
+.code-val{font-family:var(--font-display);font-size:1.2rem;letter-spacing:.18em;color:var(--gl)}
+.copy-code{background:none;border:none;color:var(--t2);cursor:pointer;font-size:.82rem;padding:2px 6px;border-radius:6px;transition:color .15s}
+.copy-code:hover{color:var(--gl)}
+
+.lobby-layout{display:grid;grid-template-columns:1fr 280px;gap:14px}
+@media(max-width:700px){.lobby-layout{grid-template-columns:1fr}}
+
+.section-title-sm{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin-bottom:10px}
+
+/* Manager cards */
+.manager-list{display:flex;flex-direction:column;gap:7px}
+.mgr-card{display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--s2);border:1px solid var(--bd);border-radius:var(--r);transition:border-color .15s}
+.mgr-card.me{border-color:rgba(22,197,94,.35)}
+.mgr-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--gl),var(--gd,#15803d));color:#000;font-weight:800;font-size:.9rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mgr-name{font-weight:700;font-size:.86rem}
+.mgr-meta{font-size:.72rem;color:var(--t3)}
+
+/* Player pool */
+.player-pool-list{display:flex;flex-direction:column;gap:5px;max-height:280px;overflow-y:auto}
+.pool-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--s2);border-radius:var(--r);font-size:.8rem;border:1px solid transparent;transition:border-color .15s}
+.pool-item:hover{border-color:var(--bd2)}
+.pi-num{font-size:.68rem;color:var(--t3);width:20px;text-align:right;flex-shrink:0}
+.pi-name{flex:1;font-weight:600;min-width:0}
+.pi-role{flex-shrink:0}
+.pi-nation{font-size:.7rem;color:var(--t3);flex-shrink:0;width:32px}
+.pi-base{font-size:.76rem;color:var(--gl);font-weight:700;flex-shrink:0;width:46px;text-align:right}
+.pi-del{background:none;border:none;color:var(--t3);cursor:pointer;padding:2px 5px;border-radius:5px;opacity:0;transition:opacity .15s}
+.pool-item:hover .pi-del{opacity:1}
+.pi-del:hover{color:var(--red)}
+
+.import-card{margin-top:12px;padding:14px;border:1px dashed var(--bd2);border-radius:var(--r2);background:rgba(255,255,255,.02)}
+.import-grid{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}
+.import-help{font-size:.74rem;color:var(--t3);margin-top:8px;line-height:1.6}
+@media(max-width:680px){.import-grid{grid-template-columns:1fr}}
+
+/* Add player form */
+.add-player-form{display:grid;grid-template-columns:1fr auto auto auto;gap:7px;margin-bottom:8px}
+@media(max-width:500px){.add-player-form{grid-template-columns:1fr 1fr}}
+
+/* ═══════════════════════ IPL TEAMS ═══════════════════════ */
+.ipl-teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:10px}
+.ipl-team-btn{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 8px;background:var(--s2);border:2px solid var(--bd);border-radius:var(--r2);cursor:pointer;transition:all .15s;text-align:center}
+.ipl-team-btn:hover{border-color:var(--bd2);transform:translateY(-1px)}
+.ipl-team-btn .team-color{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;margin-bottom:2px}
+.ipl-team-btn .team-abbr{font-size:.7rem;font-weight:800;letter-spacing:.04em}
+.ipl-team-btn .team-name-sm{font-size:.65rem;color:var(--t3);line-height:1.3}
+
+/* Settings panel */
+.settings-list{display:flex;flex-direction:column;gap:0}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)}
+.setting-row:last-child{border:none}
+.setting-key{font-size:.8rem;color:var(--t2)}
+.setting-val{font-size:.82rem;font-weight:700;color:var(--t1)}
+
+/* ═══════════════════════ AUCTION ═══════════════════════ */
+#page-auction{padding-top:54px}
+.auction-wrap{max-width:1200px;margin:0 auto;padding:12px 10px}
+
+.auction-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.live-pill{display:flex;align-items:center;gap:7px;background:var(--s2);border:1px solid var(--bd2);border-radius:100px;padding:5px 12px}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;position:relative}
+.live-dot::before{content:'';position:absolute;inset:-3px;border-radius:50%;background:rgba(244,63,94,.35);animation:lping 1.4s ease-out infinite}
+@keyframes lping{0%{transform:scale(1);opacity:.8}100%{transform:scale(2.5);opacity:0}}
+.live-pill span{font-size:.76rem;font-weight:700}
+
+.auction-main-grid{display:grid;grid-template-columns:1fr 260px;gap:12px;align-items:start}
+@media(max-width:800px){.auction-main-grid{grid-template-columns:1fr}}
+
+/* Player on block card */
+.block-card{position:relative;overflow:hidden}
+.block-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gl),transparent);animation:shimmer 2.5s ease infinite}
+@keyframes shimmer{0%{opacity:0;transform:translateX(-100%)}50%{opacity:1}100%{opacity:0;transform:translateX(100%)}}
+
+.block-inner{padding:18px}
+.block-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.block-num{font-size:.72rem;font-weight:700;color:var(--t3)}
+
+.player-showcase{display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.player-big-avatar{width:80px;height:80px;border-radius:50%;background:var(--s3);border:2.5px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:2.2rem;flex-shrink:0;position:relative}
+.player-big-avatar .role-ring{position:absolute;inset:-4px;border-radius:50%;border:2px solid transparent}
+.player-showcase-info{flex:1;min-width:0}
+.player-showcase-name{font-family:var(--font-display);font-size:1.5rem;color:#fff;line-height:1.1;margin-bottom:6px}
+.player-tags{display:flex;flex-wrap:wrap;gap:5px}
+
+.bid-panel{background:var(--s2);border-radius:var(--r2);padding:14px;margin-bottom:14px}
+.bid-panel-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.bid-label-sm{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)}
+.current-bid-num{font-family:var(--font-display);font-size:2.5rem;color:var(--gl);line-height:1}
+.bid-leader{font-size:.78rem;color:var(--t2);margin-top:3px}
+
+.timer-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.timer-num{font-size:.82rem;font-weight:700;min-width:30px}
+.timer-track{flex:1;height:5px;background:var(--bd);border-radius:3px;overflow:hidden}
+.timer-fill{height:100%;background:var(--gl);border-radius:3px;transition:width .8s linear,background .5s}
+
+.bid-quick-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px}
+@media(min-width:400px){.bid-quick-grid{grid-template-columns:repeat(4,1fr)}}
+.bid-q-btn{padding:8px 6px;border-radius:8px;background:var(--s3);border:1px solid var(--bd2);color:var(--t1);font-weight:700;font-size:.76rem;cursor:pointer;transition:all .15s}
+.bid-q-btn:hover{background:rgba(22,197,94,.15);border-color:rgba(22,197,94,.4);color:var(--gl)}
+.bid-q-btn:active{transform:scale(.96)}
+
+.custom-bid-row{display:flex;gap:7px}
+.custom-bid-row .input{flex:1}
+.my-purse-note{text-align:center;font-size:.72rem;color:var(--t3);margin-top:7px}
+
+/* Sold overlay */
+.sold-overlay{display:none;position:absolute;inset:0;background:rgba(7,9,9,.92);border-radius:var(--r2);align-items:center;justify-content:center;flex-direction:column;gap:8px;z-index:20;text-align:center;padding:20px}
+.sold-overlay.show{display:flex}
+.sold-confetti{font-size:2.5rem;animation:bounceIn .4s cubic-bezier(.34,1.56,.64,1)}
+@keyframes bounceIn{from{transform:scale(.5);opacity:0}to{transform:scale(1);opacity:1}}
+.sold-word{font-family:var(--font-display);font-size:3rem;color:var(--amber);line-height:1}
+.sold-player{font-size:.95rem;color:var(--t1);font-weight:700;margin-top:4px}
+.sold-buyer{font-size:.82rem;color:var(--t2)}
+.sold-price{font-family:var(--font-display);font-size:1.6rem;color:var(--gl);margin-top:4px}
+.sold-continue{margin-top:12px}
+
+/* Sidebar */
+.sidebar-card{margin-bottom:10px}
+.s-section-title{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);padding:12px 14px 8px}
+
+.team-purse-item{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--bd)}
+.team-purse-item:last-child{border:none}
+.tpi-left{display:flex;align-items:center;gap:7px}
+.tpi-av{width:26px;height:26px;border-radius:50%;background:var(--gl);color:#000;font-weight:800;font-size:.72rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.tpi-name{font-size:.8rem;font-weight:600}
+.tpi-right{text-align:right}
+.tpi-purse{font-size:.78rem;color:var(--gl);font-weight:700}
+.tpi-count{font-size:.68rem;color:var(--t3)}
+
+.bid-log-list{max-height:160px;overflow-y:auto;padding:0 14px 10px}
+.log-row{font-size:.74rem;padding:5px 8px;border-radius:6px;margin-bottom:3px;color:var(--t2);border-left:2px solid var(--bd2)}
+.log-row.bid{border-left-color:var(--gl);color:var(--t1);background:rgba(22,197,94,.04)}
+.log-row.sold{border-left-color:var(--amber);color:var(--amber);background:rgba(245,158,11,.04)}
+.log-row.unsold{border-left-color:var(--red);color:var(--red)}
+.log-row.system{border-left-color:var(--blue)}
+
+.queue-items{padding:0 14px 12px;display:flex;flex-direction:column;gap:5px;max-height:180px;overflow-y:auto}
+.q-item{display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--s2);border-radius:7px;font-size:.77rem}
+.q-i-n{font-size:.65rem;color:var(--t3);width:16px;text-align:right}
+.q-i-name{flex:1;font-weight:600;min-width:0}
+.q-i-role{font-size:.65rem;color:var(--t3)}
+.q-i-base{font-size:.7rem;color:var(--gl);font-weight:700}
+
+/* Host controls bar */
+.host-bar{background:rgba(22,197,94,.06);border:1px solid rgba(22,197,94,.18);border-radius:var(--r2);padding:12px 14px;margin-bottom:10px}
+.host-bar-label{font-size:.65rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--gl);margin-bottom:8px}
+.host-bar-btns{display:flex;flex-wrap:wrap;gap:6px}
+
+/* ═══════════════════════ TEAMS PAGE ═══════════════════════ */
+#page-teams{padding-top:54px}
+.page-wrap{max-width:1200px;margin:0 auto;padding:20px 14px}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+.page-h1{font-family:var(--font-display);font-size:1.6rem;color:#fff}
+.page-sub{font-size:.8rem;color:var(--t2);margin-top:2px}
+
+.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.team-card-box{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r3);overflow:hidden}
+.tcb-header{padding:16px 16px 12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px}
+.tcb-av{width:40px;height:40px;border-radius:50%;background:var(--gl);color:#000;font-weight:800;font-size:1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.tcb-name{font-weight:700;font-size:.9rem}
+.tcb-purse{font-family:var(--font-display);font-size:1.15rem;color:var(--gl);margin-left:auto}
+.tcb-squad{padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.tcb-player{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:var(--s2);border-radius:7px;font-size:.78rem}
+.tcb-player-name{font-weight:600;min-width:0;flex:1}
+.tcb-player-price{color:var(--gl);font-weight:700;font-size:.72rem;flex-shrink:0}
+.tcb-empty{text-align:center;padding:18px;color:var(--t3);font-size:.78rem}
+
+/* ═══════════════════════ LEADERBOARD ═══════════════════════ */
+#page-leaderboard{padding-top:54px}
+.lb-wrap{max-width:780px;margin:0 auto;padding:20px 14px}
+.lb-card{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r3);overflow:hidden}
+.lb-row{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--bd);transition:background .15s}
+.lb-row:last-child{border:none}
+.lb-row:hover{background:var(--s2)}
+.lb-rank-num{font-family:var(--font-display);font-size:1.2rem;width:28px;text-align:center;flex-shrink:0}
+.r-gold{color:#fbbf24}.r-silver{color:#9ca3af}.r-bronze{color:#b45309}
+.lb-av{width:36px;height:36px;border-radius:50%;background:var(--s3);border:1.5px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.88rem;color:var(--gl);flex-shrink:0}
+.lb-info{flex:1;min-width:0}
+.lb-mgr-name{font-weight:700;font-size:.88rem}
+.lb-mgr-meta{font-size:.72rem;color:var(--t3)}
+.lb-purse{font-family:var(--font-display);font-size:1.05rem;color:var(--gl);flex-shrink:0}
+
+/* ═══════════════════════ WINNER ═══════════════════════ */
+#winner-overlay{display:none;position:fixed;inset:0;z-index:800;background:rgba(7,9,9,.96);align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center;padding:24px}
+#winner-overlay.show{display:flex}
+.winner-trophy{font-size:4rem;animation:trophySpin 1.5s cubic-bezier(.34,1.56,.64,1)}
+@keyframes trophySpin{from{transform:rotate(-30deg) scale(.5);opacity:0}to{transform:rotate(0) scale(1);opacity:1}}
+.winner-headline{font-family:var(--font-display);font-size:2.5rem;color:var(--gl)}
+.winner-name{font-family:var(--font-display);font-size:1.3rem;color:var(--amber)}
+.winner-sub{font-size:.85rem;color:var(--t2);max-width:380px;line-height:1.6}
+.winner-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:8px}
+
+/* ═══════════════════════ MISC ANIMATIONS ═══════════════════════ */
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeIn .3s ease forwards}
+
+/* ═══════════════════════ BOTTOM NAV (mobile) ═══════════════════════ */
+#bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:400;background:var(--s1);border-top:1px solid var(--bd);padding:8px 0 max(8px,env(safe-area-inset-bottom));gap:0}
+#bottom-nav.show{display:flex}
+.bnav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 4px;background:none;border:none;color:var(--t3);font-size:.6rem;font-weight:700;letter-spacing:.02em;text-transform:uppercase;cursor:pointer;transition:color .15s}
+.bnav-item.active{color:var(--gl)}
+.bnav-icon{font-size:1.2rem}
+
+/* ═══════════════════════ FIREBASE SETUP PAGE ═══════════════════════ */
+#page-firebase{padding-top:54px}
+.firebase-wrap{max-width:680px;margin:0 auto;padding:24px 16px}
+.firebase-card{background:var(--s1);border:1px solid rgba(245,158,11,.3);border-radius:var(--r3);padding:24px}
+.firebase-icon{font-size:2.5rem;margin-bottom:14px}
+.firebase-h{font-family:var(--font-display);font-size:1.6rem;color:#fff;margin-bottom:8px}
+.firebase-p{font-size:.84rem;color:var(--t2);line-height:1.7;margin-bottom:20px}
+.step-list{display:flex;flex-direction:column;gap:14px;margin-bottom:24px}
+.step-item{display:flex;gap:12px}
+.step-num{width:28px;height:28px;border-radius:50%;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.3);color:var(--amber);font-weight:800;font-size:.8rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.step-text{font-size:.82rem;color:var(--t2);line-height:1.6}
+.step-text a{color:var(--blue);text-decoration:underline}
+.step-text code{background:var(--s2);padding:1px 6px;border-radius:4px;font-size:.78rem;color:var(--gl);font-family:monospace}
+.config-fields{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.config-label{display:flex;justify-content:space-between;align-items:center}
+
+/* responsive tweaks */
+@media(max-width:600px){
+  .setup-h1{font-size:2.2rem}
+  .player-big-avatar{width:60px;height:60px;font-size:1.6rem}
+  .player-showcase-name{font-size:1.2rem}
+  .current-bid-num{font-size:2rem}
+  .host-bar-btns .btn{font-size:.7rem;padding:6px 10px}
+  #page-teams,#page-leaderboard{padding-bottom:70px}
+  #page-auction{padding-bottom:70px}
+}
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<nav id="topnav">
+  <div class="nav-logo">
+    <div class="nav-logo-icon">🏏</div>
+    <span>CricAuction Pro</span>
+  </div>
+  <div class="nav-right" id="nav-right">
+    <button class="btn btn-outline btn-sm" onclick="handleEntryAction()">Join / Create</button>
+  </div>
+</nav>
+
+<!-- PAGES -->
+
+<!-- SETUP / LANDING -->
+<div id="page-setup" class="page active">
+  <div class="setup-hero">
+    <div class="setup-chip"><span class="dot"></span> Real-time Multiplayer Cricket Auction</div>
+    <h1 class="setup-h1">Your own <em>IPL-style</em><br>auction with friends</h1>
+    <p class="setup-sub">Create a room, share the code. Everyone bids live from their own phone. Free forever.</p>
+    <div class="setup-btns">
+      <button class="btn btn-primary btn-xl" onclick="handleEntryAction('create')">🚀 Host an Auction</button>
+      <button class="btn btn-outline btn-xl" onclick="handleEntryAction('join')">🔑 Join with Code</button>
+    </div>
+    <p class="setup-note">No sign-up &nbsp;·&nbsp; No download &nbsp;·&nbsp; Works on any device</p>
+  </div>
+  <div class="feat-strip">
+    <div class="feat-item"><div class="feat-item-icon">⚡</div><h3>Real-time Bidding</h3><p>Everyone sees bids instantly. Countdown timer auto-sells to highest bidder.</p></div>
+    <div class="feat-item"><div class="feat-item-icon">📱</div><h3>Mobile First</h3><p>Designed for phones. Works perfectly on any screen size.</p></div>
+    <div class="feat-item"><div class="feat-item-icon">🏏</div><h3>IPL Players</h3><p>50+ real IPL players pre-loaded by team. Add your own custom players.</p></div>
+    <div class="feat-item"><div class="feat-item-icon">💾</div><h3>Persistent Rooms</h3><p>Refresh or rejoin anytime. Data stays with Firebase (free tier).</p></div>
+  </div>
+</div>
+
+<!-- FIREBASE SETUP -->
+<div id="page-firebase" class="page">
+  <div class="firebase-wrap">
+    <div class="firebase-card">
+      <div class="firebase-icon">🔥</div>
+      <div class="firebase-h">Connect Firebase (Free)</div>
+      <p class="firebase-p">For real multiplayer across different devices, you need a free Firebase Realtime Database. It takes about 3 minutes to set up and the free tier supports all your friends.</p>
+      <div class="step-list">
+        <div class="step-item"><div class="step-num">1</div><div class="step-text">Go to <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> → Create project → name it anything (e.g. <code>cricauction</code>)</div></div>
+        <div class="step-item"><div class="step-num">2</div><div class="step-text">In your project → <b>Build → Realtime Database → Create database → Start in test mode</b></div></div>
+        <div class="step-item"><div class="step-num">3</div><div class="step-text">Go to <b>Project Settings (⚙️) → Your apps → Add app → Web (&lt;/&gt;)</b> → Register app → Copy the <code>firebaseConfig</code> values below</div></div>
+        <div class="step-item"><div class="step-num">4</div><div class="step-text">Paste the values into the fields below and click <b>Save & Connect</b></div></div>
+      </div>
+      <div class="config-fields" id="fb-config-fields">
+        <div class="field"><label class="label">API Key</label><input class="input" id="fb-apiKey" placeholder="AIzaSy..."/></div>
+        <div class="field"><label class="label">Auth Domain</label><input class="input" id="fb-authDomain" placeholder="yourproject.firebaseapp.com"/></div>
+        <div class="field"><label class="label">Database URL</label><input class="input" id="fb-databaseURL" placeholder="https://yourproject-default-rtdb.firebaseio.com"/></div>
+        <div class="field"><label class="label">Project ID</label><input class="input" id="fb-projectId" placeholder="yourproject"/></div>
+        <div class="field"><label class="label">Storage Bucket</label><input class="input" id="fb-storageBucket" placeholder="yourproject.appspot.com"/></div>
+        <div class="field"><label class="label">Messaging Sender ID</label><input class="input" id="fb-messagingSenderId" placeholder="123456789"/></div>
+        <div class="field"><label class="label">App ID</label><input class="input" id="fb-appId" placeholder="1:123456789:web:abc..."/></div>
+      </div>
+      <button class="btn btn-primary btn-w btn-lg" onclick="saveFirebaseConfig()">🔥 Save & Connect Firebase</button>
+      <div style="margin-top:12px;text-align:center">
+        <button class="btn btn-ghost btn-sm" onclick="skipFirebase()">Skip for now (use offline mode)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOBBY -->
+<div id="page-lobby" class="page">
+  <div class="lobby-wrap">
+    <div class="lobby-top">
+      <div>
+        <div class="room-title" id="lobby-room-name">Auction Room</div>
+        <div class="small dimmed" id="lobby-status">Waiting for players…</div>
+      </div>
+      <div class="code-pill">
+        <span class="small dimmed">Code</span>
+        <span class="code-val" id="lobby-code-val">—</span>
+        <button class="copy-code" onclick="copyCode()">📋 Copy</button>
+      </div>
+    </div>
+
+    <div class="lobby-layout">
+      <!-- Left col -->
+      <div>
+        <!-- Managers -->
+        <div class="card card-p" style="margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="section-title-sm">Managers <span id="mgr-count" class="dimmed"></span></div>
+            <button class="btn btn-ghost btn-sm" onclick="syncRoom()">↻</button>
+          </div>
+          <div class="manager-list" id="manager-list"></div>
+        </div>
+
+        <!-- Player pool (host only) -->
+        <div class="card card-p" id="host-pool-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div class="section-title-sm">Player Pool <span id="pool-count" class="dimmed"></span></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" onclick="showIPLLoader()">⚡ Load IPL Players</button>
+              <button class="btn btn-ghost btn-sm" onclick="clearPool()" style="color:var(--red)">🗑 Clear</button>
+            </div>
+          </div>
+
+          <!-- Add player row -->
+          <div style="display:grid;grid-template-columns:1fr 90px 80px 70px auto;gap:6px;margin-bottom:8px;flex-wrap:wrap" id="add-player-row">
+            <input class="input" id="np-name" placeholder="Player name"/>
+            <select class="input" id="np-role">
+              <option value="BAT">BAT</option>
+              <option value="BOWL">BOWL</option>
+              <option value="ALL">ALL</option>
+              <option value="WK">WK</option>
+            </select>
+            <input class="input" id="np-nation" placeholder="Country" value="IND"/>
+            <input class="input" id="np-base" placeholder="₹Cr" type="number" value="0.25" step="0.25" min="0.25"/>
+            <button class="btn btn-primary btn-sm" onclick="addPlayer()">+</button>
+          </div>
+          <div class="player-pool-list" id="pool-list"></div>
+
+          <div class="import-card">
+            <div class="section-title-sm" style="margin-bottom:10px">Import from Excel</div>
+            <div class="import-grid">
+              <input class="input" id="excel-player-file" type="file" accept=".xlsx,.xls,.csv"/>
+              <button class="btn btn-primary btn-sm" onclick="importPlayersFromExcel()">Import Excel</button>
+              <button class="btn btn-outline btn-sm" onclick="downloadPlayerTemplate()">Template</button>
+            </div>
+            <div class="import-help">
+              Use columns like <b>Name</b>, <b>Category</b>, and optional <b>Country</b>. Categories can be Batsman, All Rounder, Wicketkeeper, or Bowler. Imported players will start at ₹25L.
+            </div>
+          </div>
+        </div>
+
+        <!-- IPL loader panel (hidden by default) -->
+        <div class="card card-p hidden" id="ipl-loader-panel" style="margin-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div class="section-title-sm">Select IPL Teams to Load</div>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('ipl-loader-panel').classList.add('hidden')">✕</button>
+          </div>
+          <div class="ipl-teams-grid" id="ipl-teams-grid"></div>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="loadSelectedIPL()">Load Selected Teams</button>
+            <button class="btn btn-outline btn-sm" onclick="loadAllIPL()">Load All 50+ Players</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right col -->
+      <div>
+        <div class="card card-p" style="margin-bottom:12px" id="settings-card">
+          <div class="section-title-sm" style="margin-bottom:10px">Room Settings</div>
+          <div class="settings-list" id="settings-list"></div>
+          <div id="host-settings-form" class="hidden" style="margin-top:12px">
+            <hr style="border:none;border-top:1px solid var(--bd);margin-bottom:12px"/>
+            <div class="field"><label class="label">Purse per team (₹ Cr)</label><input class="input" id="s-purse" type="number" value="100"/></div>
+            <div class="field"><label class="label">Max squad size</label><input class="input" id="s-squad" type="number" value="15"/></div>
+            <div class="field"><label class="label">Bid timer (seconds)</label><input class="input" id="s-timer" type="number" value="30"/></div>
+            <button class="btn btn-primary btn-w" onclick="saveSettings()" style="margin-top:6px">Save Settings</button>
+          </div>
+        </div>
+
+        <!-- My purse -->
+        <div style="background:rgba(22,197,94,.07);border:1px solid rgba(22,197,94,.18);border-radius:var(--r2);padding:14px;text-align:center;margin-bottom:12px">
+          <div class="small dimmed" style="margin-bottom:3px">Your Starting Purse</div>
+          <div style="font-family:var(--font-display);font-size:2rem;color:var(--gl)" id="my-purse-lobby">₹100 Cr</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px" id="lobby-cta">
+          <button class="btn btn-primary btn-w btn-lg" id="btn-start" onclick="startAuction()">🚀 Start Auction</button>
+          <button class="btn btn-outline btn-w" onclick="leaveLobby()">← Leave Room</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AUCTION -->
+<div id="page-auction" class="page">
+  <div class="auction-wrap">
+    <div class="auction-topbar">
+      <div class="live-pill">
+        <span class="live-dot"></span>
+        <span id="auction-room-label">Live Auction</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span class="small dimmed">Left: <b id="players-remaining" style="color:var(--t1)">0</b></span>
+        <button class="btn btn-ghost btn-sm" onclick="showPage('teams')">👥 Teams</button>
+        <button class="btn btn-ghost btn-sm" onclick="showPage('leaderboard')">🏆 LB</button>
+      </div>
+    </div>
+
+    <!-- Host bar -->
+    <div class="host-bar hidden" id="host-bar">
+      <div class="host-bar-label">🎙️ Host Controls</div>
+      <div class="host-bar-btns">
+        <button class="btn btn-primary btn-sm" onclick="hostSold()">✅ SOLD</button>
+        <button class="btn btn-danger btn-sm" onclick="hostUnsold()">❌ Unsold</button>
+        <button class="btn btn-outline btn-sm" onclick="hostNext()">⏭ Skip</button>
+        <button class="btn btn-amber btn-sm" onclick="hostEnd()">🏁 End</button>
+      </div>
+    </div>
+
+    <div class="auction-main-grid">
+      <!-- Main card -->
+      <div class="card block-card" id="block-card">
+        <div class="block-inner">
+          <div class="block-header">
+            <div class="block-num" id="block-num-label">Player 0 of 0</div>
+            <span class="badge badge-green">🎯 On the Block</span>
+          </div>
+
+          <div class="player-showcase">
+            <div class="player-big-avatar" id="block-avatar-div">
+              <span id="block-emoji">🏏</span>
+              <div class="role-ring" id="role-ring"></div>
+            </div>
+            <div class="player-showcase-info">
+              <div class="player-showcase-name" id="block-player-name">—</div>
+              <div class="player-tags" id="block-player-tags"></div>
+            </div>
+          </div>
+
+          <div class="bid-panel">
+            <div class="bid-panel-top">
+              <div>
+                <div class="bid-label-sm">Current Bid</div>
+                <div class="current-bid-num" id="current-bid-display">₹0 Cr</div>
+                <div class="bid-leader" id="bid-leader-display">No bids yet</div>
+              </div>
+              <div style="text-align:right">
+                <div class="bid-label-sm">Base Price</div>
+                <div style="font-family:var(--font-display);font-size:1.1rem;color:var(--t2)" id="base-price-display">₹0 Cr</div>
+              </div>
+            </div>
+            <div class="timer-row">
+              <span class="timer-num" id="timer-display">30s</span>
+              <div class="timer-track"><div class="timer-fill" id="timer-fill" style="width:100%"></div></div>
+            </div>
+          </div>
+
+          <div class="bid-quick-grid" id="quick-bids"></div>
+          <div class="custom-bid-row">
+            <input class="input" type="number" id="custom-bid" placeholder="Custom ₹ Cr amount"/>
+            <button class="btn btn-primary" onclick="doBid('custom')" id="btn-bid">Bid ↑</button>
+          </div>
+          <div class="my-purse-note" id="purse-note"></div>
+        </div>
+
+        <!-- Sold overlay -->
+        <div class="sold-overlay" id="sold-overlay">
+          <div class="sold-confetti">🎉</div>
+          <div class="sold-word">SOLD!</div>
+          <div class="sold-player" id="so-player"></div>
+          <div class="sold-buyer" id="so-buyer"></div>
+          <div class="sold-price" id="so-price"></div>
+          <button class="btn btn-primary sold-continue" onclick="hideSold()" id="btn-hide-sold">Continue →</button>
+        </div>
+      </div>
+
+      <!-- Sidebar -->
+      <div>
+        <div class="card sidebar-card">
+          <div class="s-section-title">Teams & Purses</div>
+          <div id="teams-purse-list"></div>
+        </div>
+        <div class="card sidebar-card">
+          <div class="s-section-title">Bid Activity</div>
+          <div class="bid-log-list" id="bid-log-list"></div>
+        </div>
+        <div class="card sidebar-card">
+          <div class="s-section-title">Up Next</div>
+          <div class="queue-items" id="queue-items"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TEAMS -->
+<div id="page-teams" class="page">
+  <div class="page-wrap">
+    <div class="page-header">
+      <div><div class="page-h1">👥 All Teams</div><div class="page-sub">Squads and remaining purses</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline btn-sm" onclick="showPage('auction')">← Auction</button>
+        <button class="btn btn-ghost btn-sm" onclick="showPage('leaderboard')">🏆 LB</button>
+      </div>
+    </div>
+    <div class="teams-grid" id="teams-grid"></div>
+  </div>
+</div>
+
+<!-- LEADERBOARD -->
+<div id="page-leaderboard" class="page">
+  <div class="lb-wrap">
+    <div class="page-header">
+      <div><div class="page-h1">🏆 Leaderboard</div><div class="page-sub">Ranked by squad value spent</div></div>
+      <button class="btn btn-outline btn-sm" onclick="showPage('auction')">← Back</button>
+    </div>
+    <div class="lb-card" id="lb-card"></div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="overlay" id="overlay" onclick="maybeCloseModal(event)">
+  <div class="modal-sheet">
+    <span class="modal-handle"></span>
+    <div class="modal-title" id="modal-title">Enter the Auction</div>
+    <p class="modal-sub" id="modal-sub">Create a new room or join friends</p>
+    <div class="tabs" id="modal-tabs">
+      <button class="tab active" onclick="switchTab('create',this)">Create Room</button>
+      <button class="tab" onclick="switchTab('join',this)">Join Room</button>
+    </div>
+
+    <div id="modal-auth" class="hidden auth-panel">
+      <div class="auth-card">
+        <p class="auth-copy">Sign in with Google to continue with your auction room. Your name, email, and profile picture stay on this device.</p>
+        <div id="google-signin-slot"></div>
+        <p class="auth-note">No backend needed. Sign-in is handled directly in your browser.</p>
+      </div>
+    </div>
+
+    <div id="modal-create">
+      <div class="field"><label class="label">Your name</label><input class="input" id="c-name" placeholder="e.g. Rohit"/></div>
+      <div class="field"><label class="label">Room name</label><input class="input" id="c-room" placeholder="e.g. IPL Mega Auction 2025"/></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label class="label">Purse (₹ Cr)</label><input class="input" id="c-purse" type="number" value="100" min="20"/></div>
+        <div class="field"><label class="label">Squad size</label><input class="input" id="c-squad" type="number" value="15" min="5" max="30"/></div>
+      </div>
+      <div class="field"><label class="label">Bid timer (sec)</label><input class="input" id="c-timer" type="number" value="30" min="10" max="120"/></div>
+      <button class="btn btn-primary btn-w btn-lg" onclick="createRoom()" style="margin-top:6px">🚀 Create Room</button>
+    </div>
+
+    <div id="modal-join" class="hidden">
+      <div class="field"><label class="label">Your name</label><input class="input" id="j-name" placeholder="e.g. Virat"/></div>
+      <div class="field"><label class="label">Room code</label><input class="input" id="j-code" placeholder="6-letter code" style="text-transform:uppercase;letter-spacing:.2em;font-size:1.1rem;font-weight:700;text-align:center"/></div>
+      <button class="btn btn-primary btn-w btn-lg" onclick="joinRoom()">🏏 Join Room</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM NAV (shows in auction/teams/lb) -->
+<nav id="bottom-nav">
+  <button class="bnav-item" id="bn-auction" onclick="showPage('auction')"><span class="bnav-icon">⚡</span>Auction</button>
+  <button class="bnav-item" id="bn-teams" onclick="showPage('teams')"><span class="bnav-icon">👥</span>Teams</button>
+  <button class="bnav-item" id="bn-lb" onclick="showPage('leaderboard')"><span class="bnav-icon">🏆</span>Board</button>
+</nav>
+
+<!-- WINNER -->
+<div id="winner-overlay">
+  <div class="winner-trophy">🏆</div>
+  <div class="winner-headline">Auction Complete!</div>
+  <div class="winner-name" id="winner-name"></div>
+  <p class="winner-sub" id="winner-sub"></p>
+  <div class="winner-actions">
+    <button class="btn btn-primary btn-lg" onclick="gotoLeaderboard()">🏆 Full Leaderboard</button>
+    <button class="btn btn-outline btn-lg" onclick="gotoTeams()">👥 View Teams</button>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<!-- ════════ MAIN SCRIPT ════════ -->
+<script>
+// Wait for Firebase module to expose itself
+const FB_WAIT = setInterval(()=>{ if(window._fb){ clearInterval(FB_WAIT); init(); } }, 80);
+setTimeout(()=>{ clearInterval(FB_WAIT); if(!window._fb) init(); }, 3000);
+
+// ── IPL DATA ──────────────────────────────────────────
+const IPL_TEAMS = [
+  { abbr:'MI',  name:'Mumbai Indians',      color:'#004BA0', emoji:'💙', players:[
+    {name:'Rohit Sharma',role:'BAT',nation:'IND',base:200},
+    {name:'Ishan Kishan',role:'WK',nation:'IND',base:100},
+    {name:'Suryakumar Yadav',role:'BAT',nation:'IND',base:130},
+    {name:'Tilak Varma',role:'BAT',nation:'IND',base:80},
+    {name:'Hardik Pandya',role:'ALL',nation:'IND',base:150},
+    {name:'Tim David',role:'BAT',nation:'SGP',base:80},
+    {name:'Jasprit Bumrah',role:'BOWL',nation:'IND',base:200},
+  ]},
+  { abbr:'CSK',  name:'Chennai Super Kings', color:'#F7C600', emoji:'💛', players:[
+    {name:'MS Dhoni',role:'WK',nation:'IND',base:120},
+    {name:'Ruturaj Gaikwad',role:'BAT',nation:'IND',base:110},
+    {name:'Devon Conway',role:'BAT',nation:'NZ',base:90},
+    {name:'Ravindra Jadeja',role:'ALL',nation:'IND',base:140},
+    {name:'Deepak Chahar',role:'BOWL',nation:'IND',base:70},
+    {name:'Moeen Ali',role:'ALL',nation:'ENG',base:80},
+    {name:'Matheesha Pathirana',role:'BOWL',nation:'SL',base:70},
+  ]},
+  { abbr:'RCB',  name:'Royal Challengers',   color:'#D11F26', emoji:'❤️', players:[
+    {name:'Virat Kohli',role:'BAT',nation:'IND',base:200},
+    {name:'Faf du Plessis',role:'BAT',nation:'SA',base:100},
+    {name:'Glenn Maxwell',role:'ALL',nation:'AUS',base:110},
+    {name:'Mohammed Siraj',role:'BOWL',nation:'IND',base:90},
+    {name:'Dinesh Karthik',role:'WK',nation:'IND',base:60},
+    {name:'Cameron Green',role:'ALL',nation:'AUS',base:90},
+  ]},
+  { abbr:'KKR',  name:'Kolkata Knight Riders',color:'#2D2466', emoji:'💜', players:[
+    {name:'Shreyas Iyer',role:'BAT',nation:'IND',base:130},
+    {name:'Venkatesh Iyer',role:'ALL',nation:'IND',base:90},
+    {name:'Andre Russell',role:'ALL',nation:'WI',base:150},
+    {name:'Sunil Narine',role:'ALL',nation:'WI',base:130},
+    {name:'Mitchell Starc',role:'BOWL',nation:'AUS',base:150},
+    {name:'Phil Salt',role:'WK',nation:'ENG',base:80},
+  ]},
+  { abbr:'DC',   name:'Delhi Capitals',      color:'#0078BC', emoji:'🔵', players:[
+    {name:'David Warner',role:'BAT',nation:'AUS',base:120},
+    {name:'Rishabh Pant',role:'WK',nation:'IND',base:160},
+    {name:'Axar Patel',role:'ALL',nation:'IND',base:90},
+    {name:'Kuldeep Yadav',role:'BOWL',nation:'IND',base:90},
+    {name:'Anrich Nortje',role:'BOWL',nation:'SA',base:100},
+  ]},
+  { abbr:'PBKS', name:'Punjab Kings',        color:'#ED1B24', emoji:'🔴', players:[
+    {name:'Shikhar Dhawan',role:'BAT',nation:'IND',base:80},
+    {name:'KL Rahul',role:'WK',nation:'IND',base:170},
+    {name:'Jonny Bairstow',role:'WK',nation:'ENG',base:90},
+    {name:'Kagiso Rabada',role:'BOWL',nation:'SA',base:130},
+    {name:'Liam Livingstone',role:'ALL',nation:'ENG',base:90},
+  ]},
+  { abbr:'RR',   name:'Rajasthan Royals',    color:'#E5137D', emoji:'💗', players:[
+    {name:'Sanju Samson',role:'WK',nation:'IND',base:140},
+    {name:'Jos Buttler',role:'WK',nation:'ENG',base:170},
+    {name:'Shimron Hetmyer',role:'BAT',nation:'WI',base:80},
+    {name:'Rashid Khan',role:'BOWL',nation:'AFG',base:170},
+    {name:'Trent Boult',role:'BOWL',nation:'NZ',base:110},
+    {name:'Yuzvendra Chahal',role:'BOWL',nation:'IND',base:80},
+  ]},
+  { abbr:'SRH',  name:'Sunrisers Hyderabad', color:'#FF822A', emoji:'🧡', players:[
+    {name:'Abhishek Sharma',role:'BAT',nation:'IND',base:80},
+    {name:'Heinrich Klaasen',role:'WK',nation:'SA',base:100},
+    {name:'Aiden Markram',role:'BAT',nation:'SA',base:90},
+    {name:'Pat Cummins',role:'ALL',nation:'AUS',base:160},
+    {name:'Travis Head',role:'BAT',nation:'AUS',base:130},
+    {name:'Bhuvneshwar Kumar',role:'BOWL',nation:'IND',base:70},
+  ]},
+  { abbr:'GT',   name:'Gujarat Titans',      color:'#1C1C1C', emoji:'🖤', players:[
+    {name:'Shubman Gill',role:'BAT',nation:'IND',base:130},
+    {name:'Wriddhiman Saha',role:'WK',nation:'IND',base:50},
+    {name:'David Miller',role:'BAT',nation:'SA',base:100},
+    {name:'Rashid Khan',role:'BOWL',nation:'AFG',base:160},
+    {name:'Mohammed Shami',role:'BOWL',nation:'IND',base:120},
+    {name:'Hardik Pandya',role:'ALL',nation:'IND',base:150},
+  ]},
+  { abbr:'LSG',  name:'Lucknow SG',          color:'#A5CAFF', emoji:'🔵', players:[
+    {name:'KL Rahul',role:'WK',nation:'IND',base:160},
+    {name:'Nicholas Pooran',role:'WK',nation:'WI',base:110},
+    {name:'Quinton de Kock',role:'WK',nation:'SA',base:110},
+    {name:'Ravi Bishnoi',role:'BOWL',nation:'IND',base:70},
+    {name:'Marcus Stoinis',role:'ALL',nation:'AUS',base:90},
+    {name:'Jason Holder',role:'ALL',nation:'WI',base:80},
+  ]},
+];
+
+const selectedIPLTeams = new Set();
+const GOOGLE_CLIENT_ID = '927559479020-8e0hk7emvis86bj2i0vtcihibndrm4jv.apps.googleusercontent.com';
+const AUTH_STORAGE_KEY = 'ca_google_user';
+const DEFAULT_PLAYER_BASE = 0.25;
+const MIN_BID_INCREMENT = 0.25;
+
+// ── APP STATE ─────────────────────────────────────────
+let G = {
+  myId: '', myName: '', isHost: false,
+  room: null, roomCode: '',
+  fbReady: false, fbDb: null, fbRef: null, fbGet: null, fbSet: null,
+  fbUpdate: null, fbOnValue: null, fbListener: null,
+  authUser: null, pendingAction: '',
+  googleReady: false, googlePromptRendered: false,
+  timerInterval: null, timerStart: 0, timerDur: 30000,
+};
+
+// ── INIT ──────────────────────────────────────────────
+function init(){
+  const fb = window._fb || {};
+  G.fbReady = fb.firebaseReady || false;
+  G.fbDb = fb.db || null;
+  G.fbRef = fb.ref || null;
+  G.fbGet = fb.get || null;
+  G.fbSet = fb.set || null;
+  G.fbUpdate = fb.update || null;
+  G.fbOnValue = fb.onValue || null;
+  hydrateAuth();
+  initGoogleAuth();
+  renderNavUser();
+  syncAuthInputs();
+
+  // Load saved config
+  const saved = localStorage.getItem('fb_config');
+  if(saved && !G.fbReady){
+    // config saved but not yet applied — reload page handled separately
+  }
+
+  // Check if in a room already
+  const sess = localStorage.getItem('ca_session');
+  if(sess){
+    try{
+      const s = JSON.parse(sess);
+      G.myId = s.myId; G.myName = s.myName || (G.authUser && G.authUser.name) || '';
+      G.isHost = s.isHost; G.roomCode = s.roomCode;
+      loadAndRestore();
+    } catch(e){ localStorage.removeItem('ca_session'); }
+  }
+
+  renderIPLTeamButtons();
+}
+
+function hydrateAuth(){
+  const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+  if(!saved) return;
+  try{ G.authUser = JSON.parse(saved); }
+  catch(e){ localStorage.removeItem(AUTH_STORAGE_KEY); }
+}
+
+function persistAuth(user){
+  G.authUser = user;
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+  renderNavUser();
+  syncAuthInputs();
+}
+
+function decodeJwtPayload(token){
+  const payload = token.split('.')[1];
+  const base64 = payload.replace(/-/g,'+').replace(/_/g,'/');
+  const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+  return JSON.parse(decodeURIComponent(atob(padded).split('').map(ch=>'%'+ch.charCodeAt(0).toString(16).padStart(2,'0')).join('')));
+}
+
+function initGoogleAuth(retryCount=0){
+  if(!window.google || !google.accounts || !google.accounts.id){
+    if(retryCount<20) setTimeout(()=>initGoogleAuth(retryCount+1), 250);
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleGoogleCredential
+  });
+  G.googleReady = true;
+  G.googlePromptRendered = false;
+  maybeRenderGoogleButton();
+}
+
+function maybeRenderGoogleButton(){
+  const slot = document.getElementById('google-signin-slot');
+  if(!slot || !G.googleReady || G.googlePromptRendered) return;
+  slot.innerHTML = '';
+  google.accounts.id.renderButton(slot, {
+    theme: 'outline',
+    size: 'large',
+    shape: 'pill',
+    width: 260,
+    text: 'signin_with'
+  });
+  G.googlePromptRendered = true;
+}
+
+function handleGoogleCredential(response){
+  try{
+    const profile = decodeJwtPayload(response.credential);
+    persistAuth({
+      name: profile.name || '',
+      email: profile.email || '',
+      picture: profile.picture || ''
+    });
+    toast('Signed in as '+(G.authUser.name || 'Google user'),'success');
+    closeModal();
+    const nextAction = G.pendingAction || 'create';
+    G.pendingAction = '';
+    showModal(nextAction);
+  } catch(e){
+    toast('Google sign-in failed. Please try again.','error');
+  }
+}
+
+function escapeHTML(value){
+  return String(value||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function renderNavUser(){
+  const nav = document.getElementById('nav-right');
+  if(!nav) return;
+  if(G.authUser){
+    nav.innerHTML = `
+      <div class="nav-user">
+        <img class="nav-user-pic" src="${escapeHTML(G.authUser.picture || '')}" alt="${escapeHTML(G.authUser.name || 'User')}"/>
+        <div class="nav-user-meta">
+          <div class="nav-user-name">${escapeHTML(G.authUser.name || 'Signed in')}</div>
+          <div class="nav-user-email">${escapeHTML(G.authUser.email || '')}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="signOut()">Sign Out</button>
+      </div>
+    `;
+    return;
+  }
+  nav.innerHTML = `<button class="btn btn-outline btn-sm" onclick="handleEntryAction()">Join / Create</button>`;
+}
+
+function syncAuthInputs(){
+  const authName = G.authUser && G.authUser.name ? G.authUser.name : '';
+  const createInput = document.getElementById('c-name');
+  const joinInput = document.getElementById('j-name');
+  if(createInput){
+    createInput.value = authName || '';
+    createInput.readOnly = !!authName;
+  }
+  if(joinInput){
+    joinInput.value = authName || '';
+    joinInput.readOnly = !!authName;
+  }
+}
+
+function normalizeAmount(value){
+  const n = typeof value === 'number' ? value : parseFloat(value);
+  if(!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+function formatMoney(amount){
+  const n = normalizeAmount(amount);
+  if(n < 1) return '₹' + Math.round(n * 100) + 'L';
+  const text = Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0$/,'').replace(/\.$/,'');
+  return '₹' + text + 'Cr';
+}
+
+function mapExcelRole(value){
+  const raw = String(value || '').trim().toLowerCase();
+  if(!raw) return '';
+  if(raw.includes('wk') || raw.includes('wicket')) return 'WK';
+  if(raw.includes('all')) return 'ALL';
+  if(raw.includes('bowl')) return 'BOWL';
+  if(raw.includes('bat')) return 'BAT';
+  return '';
+}
+
+function saveSession(){
+  localStorage.setItem('ca_session', JSON.stringify({
+    myId: G.myId, myName: G.myName,
+    isHost: G.isHost, roomCode: G.roomCode
+  }));
+}
+function clearSession(){ localStorage.removeItem('ca_session'); }
+
+async function loadAndRestore(){
+  const room = await loadRoom(G.roomCode);
+  if(!room){ clearSession(); return; }
+  G.room = room;
+  if(room.auction && room.auction.active){
+    showPage('auction');
+  } else if(room.started){
+    showPage('auction');
+  } else {
+    showPage('lobby');
+  }
+  subscribeRoom();
+}
+
+// ── FIREBASE / LOCALSTORAGE ADAPTER ──────────────────
+function lsKey(code){ return 'ca_room_'+code; }
+
+async function saveRoom(room){
+  if(G.fbReady && G.fbDb){
+    try{
+      await G.fbSet(G.fbRef(G.fbDb, 'rooms/'+room.code), room);
+      return;
+    } catch(e){ console.warn('Firebase write failed, using LS', e); }
+  }
+  localStorage.setItem(lsKey(room.code), JSON.stringify(room));
+}
+
+async function loadRoom(code){
+  if(G.fbReady && G.fbDb){
+    try{
+      const snap = await G.fbGet(G.fbRef(G.fbDb, 'rooms/'+code));
+      if(snap.exists()) return snap.val();
+      return null;
+    } catch(e){ console.warn('Firebase read failed', e); }
+  }
+  const d = localStorage.getItem(lsKey(code));
+  return d ? JSON.parse(d) : null;
+}
+
+function subscribeRoom(){
+  if(G.fbReady && G.fbDb && G.fbOnValue){
+    if(G.fbListener){ G.fbListener(); G.fbListener = null; }
+    G.fbListener = G.fbOnValue(G.fbRef(G.fbDb,'rooms/'+G.roomCode), snap=>{
+      if(snap.exists()){
+        G.room = snap.val();
+        renderCurrentPage();
+      }
+    });
+  } else {
+    // Poll localStorage every 1.5s
+    if(G._pollInterval) clearInterval(G._pollInterval);
+    G._pollInterval = setInterval(syncRoom, 1500);
+  }
+}
+
+async function syncRoom(){
+  if(!G.roomCode) return;
+  const r = await loadRoom(G.roomCode);
+  if(r){ G.room = r; renderCurrentPage(); }
+}
+
+// ── NAVIGATION ────────────────────────────────────────
+let currentPage = 'setup';
+
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  currentPage = name;
+  const bnav = document.getElementById('bottom-nav');
+  const inAuction = ['auction','teams','leaderboard'].includes(name);
+  bnav.classList.toggle('show', inAuction);
+  // Bottom nav active state
+  ['auction','teams','leaderboard'].forEach(p=>{
+    const bn = document.getElementById('bn-'+({'auction':'auction','teams':'teams','leaderboard':'lb'}[p]||p));
+    if(bn) bn.classList.toggle('active', p===name);
+  });
+  document.getElementById('bn-lb').classList.toggle('active', name==='leaderboard');
+  renderCurrentPage();
+}
+
+function renderCurrentPage(){
+  if(currentPage==='lobby') renderLobby();
+  else if(currentPage==='auction') renderAuction();
+  else if(currentPage==='teams') renderTeams();
+  else if(currentPage==='leaderboard') renderLB();
+}
+
+// ── MODAL ─────────────────────────────────────────────
+function showModal(tab='create'){
+  document.getElementById('overlay').classList.add('open');
+  if(tab==='auth'){
+    document.getElementById('modal-tabs').classList.add('hidden');
+    document.getElementById('modal-auth').classList.remove('hidden');
+    document.getElementById('modal-create').classList.add('hidden');
+    document.getElementById('modal-join').classList.add('hidden');
+    document.getElementById('modal-title').textContent='Sign in with Google';
+    document.getElementById('modal-sub').textContent='Authenticate once, then continue into your auction flow';
+    G.googlePromptRendered = false;
+    maybeRenderGoogleButton();
+    return;
+  }
+  document.getElementById('modal-tabs').classList.remove('hidden');
+  document.getElementById('modal-auth').classList.add('hidden');
+  document.getElementById('modal-title').textContent='Enter the Auction';
+  document.getElementById('modal-sub').textContent='Create a new room or join friends';
+  switchTab(tab);
+}
+function closeModal(){ document.getElementById('overlay').classList.remove('open'); }
+function maybeCloseModal(e){ if(e.target===document.getElementById('overlay')) closeModal(); }
+function switchTab(tab, btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  else document.querySelectorAll('.tab')[tab==='create'?0:1].classList.add('active');
+  document.getElementById('modal-create').classList.toggle('hidden', tab!=='create');
+  document.getElementById('modal-join').classList.toggle('hidden', tab!=='join');
+}
+
+function handleEntryAction(action='create'){
+  if(!G.authUser){
+    G.pendingAction = action;
+    showModal('auth');
+    return;
+  }
+  G.pendingAction = '';
+  showModal(action);
+}
+
+function signOut(){
+  if(G._pollInterval) clearInterval(G._pollInterval);
+  if(G.fbListener){ G.fbListener(); G.fbListener=null; }
+  if(G.timerInterval){ clearInterval(G.timerInterval); G.timerInterval=null; }
+  if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+  localStorage.clear();
+  G.myId=''; G.myName=''; G.isHost=false;
+  G.room=null; G.roomCode=''; G.authUser=null; G.pendingAction='';
+  G.googlePromptRendered = false;
+  renderNavUser();
+  syncAuthInputs();
+  closeModal();
+  showPage('setup');
+  document.getElementById('bottom-nav').classList.remove('show');
+  toast('Signed out','info');
+}
+
+// ── FIREBASE SETUP ────────────────────────────────────
+function saveFirebaseConfig(){
+  const cfg = {
+    apiKey: document.getElementById('fb-apiKey').value.trim(),
+    authDomain: document.getElementById('fb-authDomain').value.trim(),
+    databaseURL: document.getElementById('fb-databaseURL').value.trim(),
+    projectId: document.getElementById('fb-projectId').value.trim(),
+    storageBucket: document.getElementById('fb-storageBucket').value.trim(),
+    messagingSenderId: document.getElementById('fb-messagingSenderId').value.trim(),
+    appId: document.getElementById('fb-appId').value.trim(),
+  };
+  if(!cfg.databaseURL){ toast('Database URL is required','error'); return; }
+  localStorage.setItem('fb_config', JSON.stringify(cfg));
+  toast('Firebase config saved! Please replace the config at the top of this file for permanent setup.','info');
+  showPage('setup');
+}
+function skipFirebase(){ showPage('setup'); }
+
+// ── CREATE ROOM ───────────────────────────────────────
+function genId(){ return Math.random().toString(36).slice(2,11) }
+function genCode(){ return Math.random().toString(36).slice(2,8).toUpperCase() }
+
+async function createRoom(){
+  const name = (G.authUser && G.authUser.name) || document.getElementById('c-name').value.trim();
+  const rname = document.getElementById('c-room').value.trim()||'Mega Auction';
+  const purse = parseInt(document.getElementById('c-purse').value)||100;
+  const squad = parseInt(document.getElementById('c-squad').value)||15;
+  const timer = parseInt(document.getElementById('c-timer').value)||30;
+  if(!name){ toast('Enter your name','error'); return; }
+
+  G.myId = genId(); G.myName = name; G.isHost = true;
+  const code = genCode(); G.roomCode = code;
+
+  const room = {
+    code, name: rname, hostId: G.myId, hostName: name,
+    settings:{ purse, squadSize: squad, timerSeconds: timer },
+    managers:[{ id:G.myId, name, purse, squad:[] }],
+    players:[],
+    auction:{ active:false, currentIdx:0, currentBid:0, currentBidder:'', currentBidderId:'', timerStart:0, log:[] },
+    started:false, ended:false
+  };
+  await saveRoom(room);
+  G.room = room;
+  saveSession();
+  closeModal();
+  subscribeRoom();
+  showPage('lobby');
+  toast('Room created! Code: '+code,'success');
+}
+
+// ── JOIN ROOM ─────────────────────────────────────────
+async function joinRoom(){
+  const name = (G.authUser && G.authUser.name) || document.getElementById('j-name').value.trim();
+  const code = document.getElementById('j-code').value.trim().toUpperCase();
+  if(!name){ toast('Enter your name','error'); return; }
+  if(code.length<4){ toast('Enter room code','error'); return; }
+
+  const room = await loadRoom(code);
+  if(!room){ toast('Room not found! Check the code.','error'); return; }
+  if(room.started){ toast('Auction already started — you can still watch!','info'); }
+  if(room.managers.find(m=>m.name.toLowerCase()===name.toLowerCase())){
+    // Re-joining
+    G.myId = room.managers.find(m=>m.name.toLowerCase()===name.toLowerCase()).id;
+    G.myName = name; G.isHost = room.hostId===G.myId;
+    G.roomCode = code; G.room = room;
+    saveSession(); closeModal(); subscribeRoom();
+    showPage(room.started ? 'auction' : 'lobby');
+    toast('Welcome back, '+name+'!','success'); return;
+  }
+
+  G.myId = genId(); G.myName = name; G.isHost = false; G.roomCode = code;
+  room.managers.push({ id:G.myId, name, purse: room.settings.purse, squad:[] });
+  await saveRoom(room);
+  G.room = room;
+  saveSession(); closeModal(); subscribeRoom();
+  showPage(room.started ? 'auction' : 'lobby');
+  toast('Joined '+room.name,'success');
+}
+
+function leaveLobby(){
+  if(G._pollInterval) clearInterval(G._pollInterval);
+  if(G.fbListener){ G.fbListener(); G.fbListener=null; }
+  clearSession();
+  G.room=null; G.roomCode=''; G.isHost=false;
+  showPage('setup');
+  document.getElementById('bottom-nav').classList.remove('show');
+}
+
+// ── LOBBY RENDER ──────────────────────────────────────
+function renderLobby(){
+  const room = G.room; if(!room) return;
+  const isHost = G.myId===room.hostId;
+
+  document.getElementById('lobby-room-name').textContent = room.name;
+  document.getElementById('lobby-code-val').textContent = room.code;
+  document.getElementById('lobby-status').textContent = room.managers.length+' manager'+(room.managers.length!==1?'s':'')+' in room';
+  document.getElementById('mgr-count').textContent = '('+room.managers.length+')';
+
+  const ml = document.getElementById('manager-list');
+  ml.innerHTML = room.managers.map(m=>`
+    <div class="mgr-card ${m.id===G.myId?'me':''}">
+      <div class="mgr-avatar">${m.name[0].toUpperCase()}</div>
+      <div>
+        <div class="mgr-name">${m.name}${m.id===G.myId?' <span style="color:var(--gl);font-size:.7rem">(You)</span>':''}</div>
+        <div class="mgr-meta">${formatMoney(m.purse)} purse · ${m.squad.length} players</div>
+      </div>
+      ${m.id===room.hostId?'<span class="badge badge-amber" style="margin-left:auto">HOST</span>':''}
+    </div>
+  `).join('');
+
+  document.getElementById('host-pool-section').classList.toggle('hidden', !isHost);
+  document.getElementById('btn-start').classList.toggle('hidden', !isHost);
+  document.getElementById('host-settings-form').classList.toggle('hidden', !isHost);
+
+  if(isHost){
+    renderPoolList();
+    document.getElementById('s-purse').value = room.settings.purse;
+    document.getElementById('s-squad').value = room.settings.squadSize;
+    document.getElementById('s-timer').value = room.settings.timerSeconds;
+  }
+
+  const sl = document.getElementById('settings-list');
+  sl.innerHTML = `
+    <div class="setting-row"><span class="setting-key">Purse/team</span><span class="setting-val">${formatMoney(room.settings.purse)}</span></div>
+    <div class="setting-row"><span class="setting-key">Squad size</span><span class="setting-val">${room.settings.squadSize}</span></div>
+    <div class="setting-row"><span class="setting-key">Timer</span><span class="setting-val">${room.settings.timerSeconds}s</span></div>
+    <div class="setting-row"><span class="setting-key">Players</span><span class="setting-val">${(room.players||[]).length}</span></div>
+  `;
+
+  const myM = room.managers.find(m=>m.id===G.myId);
+  if(myM) document.getElementById('my-purse-lobby').textContent=formatMoney(myM.purse);
+
+  if(room.started) showPage('auction');
+}
+
+function renderPoolList(){
+  const room = G.room; if(!room) return;
+  const players = room.players||[];
+  document.getElementById('pool-count').textContent='('+players.length+')';
+  const el = document.getElementById('pool-list');
+  if(!players.length){
+    el.innerHTML='<div style="text-align:center;padding:20px;color:var(--t3);font-size:.8rem">No players yet. Add players or load IPL Stars above.</div>';
+    return;
+  }
+  el.innerHTML = players.map((p,i)=>`
+    <div class="pool-item">
+      <span class="pi-num">${i+1}</span>
+      <span class="pi-name truncate">${p.name}</span>
+      <span class="pi-role">${roleBadge(p.role)}</span>
+      <span class="pi-nation">${p.nation}</span>
+      <span class="pi-base">${formatMoney(p.base)}</span>
+      <button class="pi-del" onclick="removePlayer(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function roleBadge(r){
+  const map={BAT:'<span class="badge badge-amber" style="font-size:.6rem;padding:1px 6px">BAT</span>',
+    BOWL:'<span class="badge badge-red" style="font-size:.6rem;padding:1px 6px">BOWL</span>',
+    ALL:'<span class="badge badge-blue" style="font-size:.6rem;padding:1px 6px">ALL</span>',
+    WK:'<span class="badge badge-purple" style="font-size:.6rem;padding:1px 6px">WK</span>'};
+  return map[r]||r;
+}
+
+async function addPlayer(){
+  const name=document.getElementById('np-name').value.trim();
+  if(!name){toast('Enter player name','error');return;}
+  const role=document.getElementById('np-role').value;
+  const nation=document.getElementById('np-nation').value.trim()||'IND';
+  const base=normalizeAmount(document.getElementById('np-base').value)||DEFAULT_PLAYER_BASE;
+  const room=await loadRoom(G.roomCode);
+  if(!room.players) room.players=[];
+  room.players.push({id:genId(),name,role,nation,base,status:'pending',soldTo:'',soldToId:'',soldPrice:0});
+  await saveRoom(room); G.room=room;
+  document.getElementById('np-name').value='';
+  renderPoolList();
+}
+
+async function removePlayer(i){
+  const room=await loadRoom(G.roomCode);
+  room.players.splice(i,1);
+  await saveRoom(room); G.room=room; renderPoolList();
+}
+
+async function clearPool(){
+  if(!confirm('Clear all players from pool?')) return;
+  const room=await loadRoom(G.roomCode);
+  room.players=[];
+  await saveRoom(room); G.room=room; renderPoolList();
+}
+
+async function saveSettings(){
+  const room=await loadRoom(G.roomCode);
+  room.settings.purse=parseInt(document.getElementById('s-purse').value)||100;
+  room.settings.squadSize=parseInt(document.getElementById('s-squad').value)||15;
+  room.settings.timerSeconds=parseInt(document.getElementById('s-timer').value)||30;
+  room.managers.forEach(m=>m.purse=room.settings.purse);
+  await saveRoom(room); G.room=room;
+  toast('Settings saved','success'); renderLobby();
+}
+
+function copyCode(){
+  const code=G.roomCode;
+  navigator.clipboard.writeText(code).then(()=>toast('Copied: '+code,'success')).catch(()=>toast('Code: '+code,'info'));
+}
+
+function downloadPlayerTemplate(){
+  const rows = [
+    ['Name','Category','Country'],
+    ['Virat Kohli','Batsman','IND'],
+    ['Ravindra Jadeja','All Rounder','IND'],
+    ['MS Dhoni','Wicketkeeper','IND'],
+    ['Jasprit Bumrah','Bowler','IND']
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Players');
+  XLSX.writeFile(wb, 'cricauction-player-template.xlsx');
+}
+
+async function importPlayersFromExcel(){
+  const fileInput = document.getElementById('excel-player-file');
+  const file = fileInput.files && fileInput.files[0];
+  if(!file){ toast('Choose an Excel or CSV file first','error'); return; }
+  if(typeof XLSX === 'undefined'){ toast('Excel importer not loaded','error'); return; }
+
+  try{
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type:'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval:'', raw:false });
+    if(!rows.length){ toast('No player rows found in the file','error'); return; }
+
+    const room = await loadRoom(G.roomCode);
+    if(!room.players) room.players = [];
+    let added = 0;
+
+    rows.forEach(row=>{
+      const name = String(row.Name || row['Player Name'] || row.Player || row.player || row.name || '').trim();
+      const role = mapExcelRole(row.Category || row.Role || row.Type || row.category || row.role || row.type);
+      const nation = String(row.Country || row.Nation || row.country || row.nation || 'IND').trim() || 'IND';
+      if(!name || !role) return;
+      room.players.push({
+        id:genId(),
+        name,
+        role,
+        nation,
+        base:DEFAULT_PLAYER_BASE,
+        status:'pending',
+        soldTo:'',
+        soldToId:'',
+        soldPrice:0
+      });
+      added++;
+    });
+
+    if(!added){ toast('No valid players found. Use Name and Category columns.','error'); return; }
+    await saveRoom(room); G.room = room;
+    fileInput.value = '';
+    renderPoolList();
+    toast(added+' players imported from Excel','success');
+  } catch(e){
+    toast('Could not read that Excel file','error');
+  }
+}
+
+// ── IPL TEAM LOADER ───────────────────────────────────
+function renderIPLTeamButtons(){
+  const el=document.getElementById('ipl-teams-grid');
+  if(!el) return;
+  el.innerHTML=IPL_TEAMS.map(t=>`
+    <div class="ipl-team-btn" id="ipl-btn-${t.abbr}" onclick="toggleIPLTeam('${t.abbr}',this)">
+      <div class="team-color" style="background:${t.color}">${t.emoji}</div>
+      <div class="team-abbr">${t.abbr}</div>
+      <div class="team-name-sm">${t.name.split(' ').slice(-1)[0]}</div>
+    </div>
+  `).join('');
+}
+
+function showIPLLoader(){
+  document.getElementById('ipl-loader-panel').classList.remove('hidden');
+  renderIPLTeamButtons();
+}
+
+function toggleIPLTeam(abbr, el){
+  if(selectedIPLTeams.has(abbr)){
+    selectedIPLTeams.delete(abbr);
+    el.style.borderColor='var(--bd)';
+    el.style.background='var(--s2)';
+  } else {
+    selectedIPLTeams.add(abbr);
+    el.style.borderColor='var(--gl)';
+    el.style.background='rgba(22,197,94,.08)';
+  }
+}
+
+async function loadSelectedIPL(){
+  if(!selectedIPLTeams.size){toast('Select at least one team','error');return;}
+  const teams=IPL_TEAMS.filter(t=>selectedIPLTeams.has(t.abbr));
+  await bulkAddPlayers(teams);
+}
+
+async function loadAllIPL(){
+  await bulkAddPlayers(IPL_TEAMS);
+}
+
+async function bulkAddPlayers(teams){
+  const room=await loadRoom(G.roomCode);
+  if(!room.players) room.players=[];
+  const existing=new Set(room.players.map(p=>p.name.toLowerCase()));
+  let added=0;
+  teams.forEach(t=>{
+    t.players.forEach(p=>{
+      if(!existing.has(p.name.toLowerCase())){
+        room.players.push({id:genId(),name:p.name,role:p.role,nation:p.nation,base:DEFAULT_PLAYER_BASE,status:'pending',soldTo:'',soldToId:'',soldPrice:0});
+        existing.add(p.name.toLowerCase()); added++;
+      }
+    });
+  });
+  await saveRoom(room); G.room=room;
+  document.getElementById('ipl-loader-panel').classList.add('hidden');
+  selectedIPLTeams.clear();
+  renderPoolList();
+  toast(added+' players added!','success');
+}
+
+// ── START AUCTION ─────────────────────────────────────
+async function startAuction(){
+  const room=await loadRoom(G.roomCode);
+  if(!room.players||!room.players.length){toast('Add players first!','error');return;}
+  room.started=true;
+  room.auction={
+    active:true, currentIdx:0,
+    currentBid:room.players[0].base,
+    currentBidder:'', currentBidderId:'',
+    timerStart:Date.now(),
+    log:[{type:'system',text:'🎙️ Auction started — '+room.players.length+' players'}]
+  };
+  await saveRoom(room); G.room=room;
+  showPage('auction');
+}
+
+// ── AUCTION RENDER ────────────────────────────────────
+function renderAuction(){
+  const room=G.room; if(!room||!room.started) return;
+  const a=room.auction; if(!a) return;
+  const isHost=G.myId===room.hostId;
+
+  document.getElementById('auction-room-label').textContent=room.name;
+  document.getElementById('host-bar').classList.toggle('hidden',!isHost);
+  document.getElementById('players-remaining').textContent=(room.players||[]).filter(p=>p.status==='pending').length;
+
+  if(!a.active || a.ended){
+    return; // show winner
+  }
+
+  const cp=room.players[a.currentIdx];
+  if(!cp) return;
+
+  document.getElementById('block-num-label').textContent='Player '+(a.currentIdx+1)+' of '+room.players.length;
+  document.getElementById('block-emoji').textContent=roleEmoji(cp.role);
+  document.getElementById('block-player-name').textContent=cp.name;
+  document.getElementById('block-player-tags').innerHTML=`
+    ${roleBadge(cp.role)}
+    <span class="badge badge-ghost">${cp.nation}</span>
+    <span class="badge badge-ghost">Base ${formatMoney(cp.base)}</span>
+  `;
+
+  // Role ring color
+  const ringColors={BAT:'var(--amber)',BOWL:'var(--red)',ALL:'var(--blue)',WK:'var(--purple)'};
+  document.getElementById('role-ring').style.borderColor=ringColors[cp.role]||'var(--bd2)';
+
+  document.getElementById('current-bid-display').textContent=formatMoney(a.currentBid);
+  document.getElementById('base-price-display').textContent=formatMoney(cp.base);
+  document.getElementById('bid-leader-display').textContent=a.currentBidder?'🏅 '+a.currentBidder:'No bids yet — opens at '+formatMoney(cp.base);
+
+  // Quick bids
+  const steps=[0.25,0.5,1,2,5,10,15,25];
+  document.getElementById('quick-bids').innerHTML=steps.slice(0,6).map(s=>`
+    <button class="bid-q-btn" onclick="doBid(${normalizeAmount(a.currentBid+s)})">+${formatMoney(s)}</button>
+  `).join('');
+
+  // My purse
+  const myM=room.managers.find(m=>m.id===G.myId);
+  if(myM) document.getElementById('purse-note').textContent='Your purse: '+formatMoney(myM.purse)+' remaining';
+
+  // Teams
+  document.getElementById('teams-purse-list').innerHTML=room.managers.map(m=>`
+    <div class="team-purse-item ${m.id===a.currentBidderId?'style="background:rgba(22,197,94,.06)"':''}">
+      <div class="tpi-left">
+        <div class="tpi-av">${m.name[0].toUpperCase()}</div>
+        <div class="tpi-name">${m.name}${m.id===G.myId?' (You)':''}</div>
+      </div>
+      <div class="tpi-right">
+        <div class="tpi-purse">${formatMoney(m.purse)}</div>
+        <div class="tpi-count">${m.squad.length} pl</div>
+      </div>
+    </div>
+  `).join('');
+
+  // Log
+  const logEl=document.getElementById('bid-log-list');
+  const logs=[...(a.log||[])].reverse().slice(0,25);
+  logEl.innerHTML=logs.map(l=>`<div class="log-row ${l.type}">${l.text}</div>`).join('');
+
+  // Queue
+  const upcoming=(room.players||[]).slice(a.currentIdx+1).filter(p=>p.status==='pending').slice(0,8);
+  document.getElementById('queue-items').innerHTML=upcoming.length
+    ? upcoming.map((p,i)=>`<div class="q-item"><span class="q-i-n">${i+1}</span><span class="q-i-name truncate">${p.name}</span><span class="q-i-role">${p.role}</span><span class="q-i-base">${formatMoney(p.base)}</span></div>`).join('')
+    : '<div style="text-align:center;font-size:.74rem;color:var(--t3);padding:10px">No more players</div>';
+
+  // Timer
+  updateTimer(room);
+}
+
+let lastTimerRoom='';
+function updateTimer(room){
+  const a=room.auction;
+  const key=room.code+'-'+a.currentIdx+'-'+a.timerStart;
+  if(lastTimerRoom===key) return;
+  lastTimerRoom=key;
+  if(G.timerInterval) clearInterval(G.timerInterval);
+  const dur=room.settings.timerSeconds*1000;
+  function tick(){
+    const elapsed=Date.now()-a.timerStart;
+    const rem=Math.max(0,Math.ceil((dur-elapsed)/1000));
+    const pct=Math.max(0,(dur-elapsed)/dur*100);
+    const td=document.getElementById('timer-display');
+    const tf=document.getElementById('timer-fill');
+    if(td) td.textContent=rem+'s';
+    if(tf){ tf.style.width=pct+'%'; tf.style.background=rem<=5?'var(--red)':rem<=10?'var(--amber)':'var(--gl)'; }
+    if(rem===0 && G.isHost){
+      clearInterval(G.timerInterval);
+      G.timerInterval=null;
+      lastTimerRoom='';
+      autoSell();
+    }
+  }
+  tick();
+  G.timerInterval=setInterval(tick,400);
+}
+
+async function autoSell(){
+  const room=await loadRoom(G.roomCode);
+  if(!room||!room.auction.active) return;
+  if(room.auction.currentBidder) await doSold(room);
+  else await doUnsold(room);
+}
+
+// ── BIDDING ───────────────────────────────────────────
+async function doBid(amount){
+  const room=await loadRoom(G.roomCode);
+  if(!room||!room.auction.active){toast('Auction not active','error');return;}
+  const myM=room.managers.find(m=>m.id===G.myId);
+  if(!myM){toast('You are not in this room','error');return;}
+
+  let bid=amount;
+  if(amount==='custom'){
+    bid=normalizeAmount(document.getElementById('custom-bid').value);
+    if(!bid||bid<DEFAULT_PLAYER_BASE){toast('Enter a valid amount','error');return;}
+  }
+  bid=normalizeAmount(bid);
+
+  const a=room.auction;
+  const minBid = normalizeAmount(a.currentBid + (a.currentBidder ? MIN_BID_INCREMENT : 0));
+  if(bid<minBid){
+    toast('Must bid at least '+formatMoney(minBid),'error');return;
+  }
+  if(bid>myM.purse){toast('Not enough purse! You have '+formatMoney(myM.purse),'error');return;}
+
+  const cp=room.players[a.currentIdx];
+  room.auction.currentBid=bid;
+  room.auction.currentBidder=myM.name;
+  room.auction.currentBidderId=myM.id;
+  room.auction.timerStart=Date.now();
+  room.auction.log.push({type:'bid',text:'💰 '+myM.name+' → '+formatMoney(bid)+' ('+cp.name+')'});
+  await saveRoom(room); G.room=room;
+  document.getElementById('custom-bid').value='';
+  renderAuction();
+  toast('Bid: '+formatMoney(bid),'success');
+}
+
+// ── HOST CONTROLS ─────────────────────────────────────
+async function hostSold(){
+  const room=await loadRoom(G.roomCode);
+  if(!room.auction.currentBidder){toast('No bids yet!','error');return;}
+  await doSold(room);
+}
+
+async function doSold(room){
+  const a=room.auction;
+  const cp=room.players[a.currentIdx];
+  cp.status='sold'; cp.soldTo=a.currentBidder; cp.soldToId=a.currentBidderId; cp.soldPrice=a.currentBid;
+  const mgr=room.managers.find(m=>m.id===a.currentBidderId);
+  if(mgr){ mgr.purse-=a.currentBid; mgr.squad.push({name:cp.name,role:cp.role,nation:cp.nation,price:a.currentBid}); }
+  a.log.push({type:'sold',text:'🎉 SOLD! '+cp.name+' → '+a.currentBidder+' @ '+formatMoney(a.currentBid)});
+  await saveRoom(room); G.room=room;
+  if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
+  showSold(cp.name, a.currentBidder, a.currentBid);
+}
+
+async function hostUnsold(){
+  const room=await loadRoom(G.roomCode);
+  await doUnsold(room);
+}
+
+async function doUnsold(room){
+  const a=room.auction;
+  const cp=room.players[a.currentIdx];
+  cp.status='unsold';
+  a.log.push({type:'unsold',text:'❌ Unsold: '+cp.name});
+  await saveRoom(room); G.room=room;
+  if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
+  toast(cp.name+' unsold','info');
+  await advanceNext(room);
+}
+
+async function hostNext(){
+  const room=await loadRoom(G.roomCode);
+  await advanceNext(room);
+}
+
+async function advanceNext(room){
+  const a=room.auction;
+  let next=-1;
+  for(let i=a.currentIdx+1;i<room.players.length;i++){
+    if(room.players[i].status==='pending'){next=i;break;}
+  }
+  if(next===-1){
+    a.active=false; a.ended=true;
+    a.log.push({type:'system',text:'🏁 Auction complete!'});
+    await saveRoom(room); G.room=room;
+    if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
+    showWinner(room); return;
+  }
+  a.currentIdx=next; a.currentBid=room.players[next].base;
+  a.currentBidder=''; a.currentBidderId=''; a.timerStart=Date.now();
+  a.log.push({type:'system',text:'🎯 Up next: '+room.players[next].name});
+  await saveRoom(room); G.room=room; lastTimerRoom='';
+  renderAuction();
+}
+
+async function hostEnd(){
+  if(!confirm('End auction now?')) return;
+  const room=await loadRoom(G.roomCode);
+  room.auction.active=false; room.auction.ended=true;
+  room.auction.log.push({type:'system',text:'🏁 Auction ended by host'});
+  await saveRoom(room); G.room=room;
+  if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
+  showWinner(room);
+}
+
+// ── SOLD OVERLAY ──────────────────────────────────────
+function showSold(name,buyer,price){
+  document.getElementById('so-player').textContent=name;
+  document.getElementById('so-buyer').textContent='🏅 Going to '+buyer;
+  document.getElementById('so-price').textContent=formatMoney(price);
+  document.getElementById('sold-overlay').classList.add('show');
+  document.getElementById('btn-hide-sold').classList.toggle('hidden',!G.isHost);
+}
+function hideSold(){
+  document.getElementById('sold-overlay').classList.remove('show');
+  advanceNext(G.room);
+}
+
+// ── WINNER ────────────────────────────────────────────
+function showWinner(room){
+  const sorted=[...room.managers].sort((a,b)=>{
+    return b.squad.reduce((s,p)=>s+p.price,0)-a.squad.reduce((s,p)=>s+p.price,0);
+  });
+  const w=sorted[0];
+  const totalSold=room.players.filter(p=>p.status==='sold').length;
+  document.getElementById('winner-name').textContent=w?'🏆 '+w.name+' wins!':'';
+  document.getElementById('winner-sub').textContent=totalSold+' players sold across '+room.managers.length+' teams. What a night!';
+  document.getElementById('winner-overlay').classList.add('show');
+}
+function hideWinner(){document.getElementById('winner-overlay').classList.remove('show');}
+function gotoLeaderboard(){hideWinner();showPage('leaderboard');}
+function gotoTeams(){hideWinner();showPage('teams');}
+
+// ── TEAMS RENDER ──────────────────────────────────────
+function renderTeams(){
+  const room=G.room; if(!room) return;
+  document.getElementById('teams-grid').innerHTML=room.managers.map(m=>`
+    <div class="team-card-box">
+      <div class="tcb-header">
+        <div class="tcb-av">${m.name[0].toUpperCase()}</div>
+        <div>
+          <div class="tcb-name">${m.name}${m.id===G.myId?' (You)':''}</div>
+          <div class="small dimmed">${m.squad.length} player${m.squad.length!==1?'s':''}</div>
+        </div>
+        <div class="tcb-purse">₹${m.purse}Cr</div>
+      </div>
+      <div class="tcb-squad">
+        ${m.squad.length?m.squad.map(p=>`
+          <div class="tcb-player">
+            <span class="tcb-player-name">${p.name} ${roleBadge(p.role)}</span>
+            <span class="tcb-player-price">₹${p.price}Cr</span>
+          </div>
+        `).join(''):'<div class="tcb-empty">No players yet</div>'}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── LB RENDER ─────────────────────────────────────────
+function renderLB(){
+  const room=G.room; if(!room) return;
+  const sorted=[...room.managers].sort((a,b)=>{
+    const va=a.squad.reduce((s,p)=>s+p.price,0);
+    const vb=b.squad.reduce((s,p)=>s+p.price,0);
+    return vb-va;
+  });
+  const rc=['r-gold','r-silver','r-bronze'];
+  const ri=['🥇','🥈','🥉'];
+  document.getElementById('lb-card').innerHTML=sorted.map((m,i)=>{
+    const spent=m.squad.reduce((s,p)=>s+p.price,0);
+    return `<div class="lb-row">
+      <div class="lb-rank-num ${rc[i]||''}">${ri[i]||i+1}</div>
+      <div class="lb-av">${m.name[0].toUpperCase()}</div>
+      <div class="lb-info">
+        <div class="lb-mgr-name">${m.name}${m.id===G.myId?' (You)':''}</div>
+        <div class="lb-mgr-meta">${m.squad.length} players · ₹${spent}Cr spent</div>
+      </div>
+      <div class="lb-purse">₹${m.purse}Cr left</div>
+    </div>`;
+  }).join('');
+}
+
+// ── HELPERS ───────────────────────────────────────────
+function roleEmoji(r){return{BAT:'🏏',BOWL:'⚡',ALL:'🌟',WK:'🧤'}[r]||'🏏';}
+
+function toast(msg,type='info'){
+  const c=document.getElementById('toasts');
+  const t=document.createElement('div');
+  t.className='toast '+type;
+  t.textContent=msg;
+  c.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(10px)';t.style.transition='all .25s';setTimeout(()=>t.remove(),260);},3000);
+}
+
+// Storage event for cross-tab
+window.addEventListener('storage',e=>{
+  if(G.roomCode && e.key===lsKey(G.roomCode)){
+    try{ G.room=JSON.parse(e.newValue); renderCurrentPage(); }catch(ex){}
+  }
+});
+</script>
+</body>
+</html>
