@@ -658,9 +658,9 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   #page-auction .auction-topbar{
     position:sticky;
     top:54px;
-    height:36px;
-    min-height:36px;
-    max-height:36px;
+    height:38px;
+    min-height:38px;
+    max-height:38px;
     padding:0 10px;
     align-items:center;
     gap:6px;
@@ -668,15 +668,18 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     overflow:hidden;
   }
   #page-auction .auction-topbar>div:last-child{
-    width:auto;
+    display:flex;
+    align-items:center;
     flex:1;
     justify-content:flex-end;
     gap:6px;
     font-size:.68rem;
     flex-wrap:nowrap;
     overflow:hidden;
+    white-space:nowrap;
   }
-  #page-auction .live-pill span:last-child{font-size:.78rem}
+  #page-auction .auction-topbar>div:last-child .small{white-space:nowrap}
+  #page-auction .live-pill span:last-child{font-size:.76rem}
   #page-auction .auction-topbar .btn{padding:3px 7px;font-size:.65rem;height:26px}
   #page-auction .host-bar.hidden + .auction-main-grid,
   #page-auction .host-bar:not(.hidden) + .auction-main-grid{
@@ -689,7 +692,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   #page-auction .auction-main-grid>div:first-child{
     width:auto;
     max-width:none;
-    margin:12px 10px 0;
+    margin:6px 10px 0;
     justify-self:stretch;
   }
   #page-auction .auction-main-grid>div:last-child{
@@ -702,8 +705,8 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   .block-header{
     display:block;
     min-height:0;
-    padding:12px 14px 14px;
-    margin-bottom:10px;
+    padding:10px 12px 12px;
+    margin-bottom:8px;
   }
   .mobile-player-name{
     display:block;
@@ -788,9 +791,9 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     height:34px;
   }
   .host-bar{
-    top:90px;
+    top:92px;
     height:auto;
-    padding:5px 10px;
+    padding:6px 10px;
     overflow-x:auto;
   }
   .host-bar-btns{
@@ -798,7 +801,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     min-width:max-content;
     gap:6px;
   }
-  .host-ctrl-btn{min-height:26px;height:26px;padding:0 10px;font-size:.65rem}
+  .host-ctrl-btn{min-height:28px;height:28px;padding:0 10px;font-size:.68rem}
 }
 
 @media(max-width:767px){
