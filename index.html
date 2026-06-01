@@ -693,20 +693,39 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   }
   .block-header{
     min-height:0;
-    padding:16px 14px 14px;
+    padding:12px 14px 14px;
     margin-bottom:10px;
     align-items:center;
   }
-  .player-showcase{gap:12px;min-width:0}
-  .player-showcase-info{min-width:0;flex:1}
-  .player-big-avatar{width:54px;height:54px;flex:0 0 54px}
+  .player-showcase{
+    display:grid;
+    grid-template-columns:54px minmax(0,1fr);
+    grid-template-areas:
+      "name name"
+      "avatar tags";
+    gap:10px 12px;
+    width:100%;
+    min-width:0;
+  }
+  .player-showcase-info{display:contents}
+  .player-big-avatar{grid-area:avatar;width:54px;height:54px;flex:0 0 54px}
   .player-showcase-name{
-    font-size:1.18rem;
-    line-height:1.18;
+    grid-area:name;
+    display:block!important;
+    color:#fff!important;
+    font-size:1.2rem;
+    line-height:1.2;
+    min-height:1.45em;
     max-width:100%;
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
+    margin:0;
+  }
+  .player-tags{
+    grid-area:tags;
+    align-self:center;
+    width:100%;
   }
   .player-tags .base-line{font-size:.66rem}
   .bid-panel{min-height:0;padding:14px;margin-bottom:12px}
