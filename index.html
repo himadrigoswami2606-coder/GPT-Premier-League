@@ -322,6 +322,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .custom-bid-row{display:flex;gap:7px}
 .custom-bid-row .input{flex:1}
 .my-purse-note{text-align:center;font-size:.72rem;color:var(--t3);margin-top:7px}
+.mobile-current-player{display:none}
 
 /* Sold overlay */
 .sold-overlay{display:none;position:absolute;inset:0;background:rgba(7,9,9,.92);border-radius:var(--r2);align-items:center;justify-content:center;flex-direction:column;gap:8px;z-index:20;text-align:center;padding:20px}
@@ -658,29 +659,19 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   #page-auction .auction-topbar{
     position:sticky;
     top:54px;
-    height:38px;
-    min-height:38px;
-    max-height:38px;
-    padding:0 10px;
-    align-items:center;
-    gap:6px;
-    flex-wrap:nowrap;
-    overflow:hidden;
+    height:auto;
+    min-height:54px;
+    padding:8px 12px;
+    align-items:flex-start;
+    gap:8px;
   }
   #page-auction .auction-topbar>div:last-child{
-    display:flex;
-    align-items:center;
-    flex:1;
-    justify-content:flex-end;
-    gap:6px;
-    font-size:.68rem;
-    flex-wrap:nowrap;
-    overflow:hidden;
-    white-space:nowrap;
+    width:100%;
+    justify-content:space-between;
+    gap:8px;
+    font-size:.72rem;
   }
-  #page-auction .auction-topbar>div:last-child .small{white-space:nowrap}
-  #page-auction .live-pill span:last-child{font-size:.76rem}
-  #page-auction .auction-topbar .btn{padding:3px 7px;font-size:.65rem;height:26px}
+  #page-auction .auction-topbar .btn{padding:5px 8px;font-size:.7rem}
   #page-auction .host-bar.hidden + .auction-main-grid,
   #page-auction .host-bar:not(.hidden) + .auction-main-grid{
     margin-top:0;
@@ -692,7 +683,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   #page-auction .auction-main-grid>div:first-child{
     width:auto;
     max-width:none;
-    margin:6px 10px 0;
+    margin:12px 10px 0;
     justify-self:stretch;
   }
   #page-auction .auction-main-grid>div:last-child{
@@ -705,8 +696,8 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   .block-header{
     display:block;
     min-height:0;
-    padding:10px 12px 12px;
-    margin-bottom:8px;
+    padding:12px 14px 14px;
+    margin-bottom:10px;
   }
   .mobile-player-name{
     display:block;
@@ -782,8 +773,25 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   .my-purse-note{
     left:10px;
     right:10px;
-    bottom:calc(10px + env(safe-area-inset-bottom));
+    bottom:calc(30px + env(safe-area-inset-bottom));
     font-size:.7rem;
+  }
+  .mobile-current-player{
+    display:block;
+    position:fixed;
+    left:10px;
+    right:10px;
+    bottom:calc(10px + env(safe-area-inset-bottom));
+    z-index:489;
+    text-align:center;
+    color:#c9bf72;
+    font-size:.72rem;
+    font-weight:800;
+    line-height:1.2;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    pointer-events:none;
   }
   .auction-chat-pill{
     right:12px;
@@ -791,17 +799,15 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     height:34px;
   }
   .host-bar{
-    top:92px;
+    top:108px;
     height:auto;
-    padding:6px 10px;
+    padding:8px 10px;
     overflow-x:auto;
   }
   .host-bar-btns{
     justify-content:flex-start;
     min-width:max-content;
-    gap:6px;
   }
-  .host-ctrl-btn{min-height:28px;height:28px;padding:0 10px;font-size:.68rem}
 }
 
 @media(max-width:767px){
@@ -1120,6 +1126,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
             <button class="btn btn-primary" onclick="doBid('custom')" id="btn-bid">Bid ↑</button>
           </div>
           <div class="my-purse-note" id="purse-note"></div>
+          <div class="mobile-current-player" id="mobile-current-player"></div>
         </div>
 
         <!-- Sold overlay -->
@@ -2348,6 +2355,8 @@ function renderAuction(){
   document.getElementById('block-player-name').textContent=cp.name;
   const mobilePlayerName=document.getElementById('mobile-block-player-name');
   if(mobilePlayerName) mobilePlayerName.textContent=cp.name;
+  const mobileCurrentPlayer=document.getElementById('mobile-current-player');
+  if(mobileCurrentPlayer) mobileCurrentPlayer.textContent='Now: '+cp.name;
   document.getElementById('block-player-tags').innerHTML=`
     <span class="badge"><span class="role-chip">${cp.role}</span><span class="nation-dot"></span>${escapeHTML(cp.nation)}</span>
     <span class="base-line">Base Price <b>${formatMoney(cp.base)}</b></span>
