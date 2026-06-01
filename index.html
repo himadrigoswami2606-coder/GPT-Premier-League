@@ -791,6 +791,24 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     min-width:max-content;
   }
 }
+
+@media(max-width:767px){
+  #page-auction{
+    padding-bottom:calc(180px + env(safe-area-inset-bottom));
+  }
+  #page-auction .auction-wrap{
+    padding-bottom:calc(180px + env(safe-area-inset-bottom));
+  }
+  #page-auction .auction-main-grid{
+    padding-bottom:calc(180px + env(safe-area-inset-bottom));
+  }
+  #page-auction .auction-main-grid>div:first-child{
+    margin-bottom:calc(132px + env(safe-area-inset-bottom));
+  }
+  #page-auction .auction-main-grid>div:last-child{
+    padding-bottom:calc(180px + env(safe-area-inset-bottom));
+  }
+}
 </style>
 </head>
 <body>
@@ -962,6 +980,10 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
             <div class="field">
               <label class="label">Auction purse</label>
               <input class="input" id="ret-purse" type="number" min="0" step="0.25" placeholder="e.g. 75" oninput="this.dataset.dirty='1'"/>
+            </div>
+            <div class="field span-2">
+              <label class="label">Search players</label>
+              <input class="input" id="ret-player-search" placeholder="Type a player name" oninput="renderRetentionPanel(true)"/>
             </div>
             <div class="field span-2">
               <label class="label">Player to retain</label>
@@ -1891,22 +1913,29 @@ function renderPoolList(){
   `).join('');
 }
 
-function renderRetentionPanel(){
+function renderRetentionPanel(keepPlayerSearch=false){
   const room=G.room; if(!room) return;
   const mgrSelect=document.getElementById('ret-manager');
   const playerSelect=document.getElementById('ret-player');
+  const playerSearch=document.getElementById('ret-player-search');
   const list=document.getElementById('retention-list');
   if(!mgrSelect||!playerSelect||!list) return;
 
   const selectedManager=mgrSelect.value || (room.managers[0]?.id || '');
+  const selectedPlayer=playerSelect.value || '';
+  const searchText=playerSearch && keepPlayerSearch ? playerSearch.value.trim().toLowerCase() : '';
   mgrSelect.innerHTML=(room.managers||[]).map(m=>`
     <option value="${m.id}" ${m.id===selectedManager?'selected':''}>${escapeHTML(m.name)}</option>
   `).join('');
+  if(playerSearch && !keepPlayerSearch) playerSearch.value='';
 
-  const available=(room.players||[]).filter(p=>p.status==='pending');
+  const available=(room.players||[]).filter(p=>
+    p.status==='pending' &&
+    (!searchText || String(p.name||'').toLowerCase().includes(searchText))
+  );
   playerSelect.innerHTML=available.length
-    ? available.map(p=>`<option value="${p.id}">${escapeHTML(p.name)} - ${roleName(p.role)} - ${formatMoney(p.base)}</option>`).join('')
-    : '<option value="">No available players</option>';
+    ? available.map(p=>`<option value="${p.id}" ${p.id===selectedPlayer?'selected':''}>${escapeHTML(p.name)} - ${roleName(p.role)} - ${formatMoney(p.base)}</option>`).join('')
+    : `<option value="">${searchText?'No matching players':'No available players'}</option>`;
 
   syncRetentionBudgetInput(true);
   const retainedManagers=(room.managers||[]).filter(m=>(m.squad||[]).some(p=>p.retained) || typeof m.retentionBudget==='number');
