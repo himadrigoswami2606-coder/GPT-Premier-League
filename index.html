@@ -793,20 +793,39 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 }
 
 @media(max-width:767px){
+  :root{
+    --mobile-fixed-bid-space: calc(210px + env(safe-area-inset-bottom));
+  }
   #page-auction{
-    padding-bottom:calc(180px + env(safe-area-inset-bottom));
+    padding-bottom:var(--mobile-fixed-bid-space);
   }
   #page-auction .auction-wrap{
-    padding-bottom:calc(180px + env(safe-area-inset-bottom));
+    padding-bottom:var(--mobile-fixed-bid-space);
   }
   #page-auction .auction-main-grid{
-    padding-bottom:calc(180px + env(safe-area-inset-bottom));
+    padding-bottom:var(--mobile-fixed-bid-space);
   }
   #page-auction .auction-main-grid>div:first-child{
-    margin-bottom:calc(132px + env(safe-area-inset-bottom));
+    margin-bottom:var(--mobile-fixed-bid-space);
   }
   #page-auction .auction-main-grid>div:last-child{
-    padding-bottom:calc(180px + env(safe-area-inset-bottom));
+    padding-bottom:var(--mobile-fixed-bid-space);
+  }
+  #page-auction .block-card,
+  #page-auction .block-inner,
+  #page-auction .block-header{
+    overflow:visible!important;
+    max-height:none!important;
+    height:auto!important;
+  }
+  #page-auction .mobile-player-name{
+    overflow:visible!important;
+    text-overflow:clip!important;
+    white-space:normal!important;
+    height:auto!important;
+    max-height:none!important;
+    min-height:0;
+    word-break:break-word;
   }
 }
 </style>
@@ -1870,7 +1889,8 @@ function renderLobby(){
 
   if(isHost){
     renderPoolList();
-    renderRetentionPanel();
+    const retSearch=document.getElementById('ret-player-search');
+    renderRetentionPanel(!!(retSearch && (document.activeElement===retSearch || retSearch.value.trim())));
     document.getElementById('s-purse').value = room.settings.purse;
     document.getElementById('s-squad').value = room.settings.squadSize;
     document.getElementById('s-timer').value = room.settings.timerSeconds;
