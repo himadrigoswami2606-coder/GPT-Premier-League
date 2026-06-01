@@ -228,11 +228,16 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .pool-item:hover .pi-del{opacity:1}
 .pi-del:hover{color:var(--red)}
 
-.retention-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.retention-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:end}
+.retention-grid>*{min-width:0}
+.retention-grid .field{margin-bottom:0}
+.retention-grid .input{min-width:0;height:38px}
+.retention-grid .btn{min-height:40px;padding:10px 12px;white-space:normal;line-height:1.15}
 .retention-grid .span-2{grid-column:1/-1}
 .retention-list{display:flex;flex-direction:column;gap:7px;margin-top:10px;max-height:230px;overflow:auto}
 .retention-team{border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);padding:10px}
 .retention-team-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+.retention-team-head>div{min-width:0}
 .retention-team-name{font-weight:800;color:var(--t1)}
 .retention-team-meta{font-size:.72rem;color:var(--t2)}
 .retention-player{display:flex;align-items:center;gap:7px;padding:7px 0;border-top:1px solid var(--bd)}
@@ -630,6 +635,136 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .host-ctrl-btn.btn-blue{background:transparent;border-color:#2b2b2f;color:#9b9b9b}
 .host-ctrl-btn.btn-amber{background:transparent;border-color:#512225;color:#ff5151}
 .host-ctrl-btn.btn-amber:hover{background:#180b0c;border-color:#7a2e33;color:#ff6969}
+
+@media(max-width:700px){
+  #page-auction{padding-bottom:138px;overflow-x:hidden}
+  #page-auction .auction-topbar{
+    position:sticky;
+    top:54px;
+    height:auto;
+    min-height:54px;
+    padding:8px 12px;
+    align-items:flex-start;
+    gap:8px;
+  }
+  #page-auction .auction-topbar>div:last-child{
+    width:100%;
+    justify-content:space-between;
+    gap:8px;
+    font-size:.72rem;
+  }
+  #page-auction .auction-topbar .btn{padding:5px 8px;font-size:.7rem}
+  #page-auction .auction-main-grid{
+    grid-template-columns:minmax(0,1fr);
+    min-height:0;
+  }
+  #page-auction .auction-main-grid>div:first-child{
+    width:auto;
+    max-width:none;
+    margin:12px 10px 0;
+    justify-self:stretch;
+  }
+  #page-auction .auction-main-grid>div:last-child{
+    border-left:0;
+    border-top:1px solid #242424;
+    min-height:0;
+    padding:12px 10px 148px;
+    background:#050607;
+  }
+  .block-header{
+    min-height:0;
+    padding:14px;
+    margin-bottom:10px;
+    align-items:center;
+  }
+  .player-showcase{gap:12px;min-width:0}
+  .player-showcase-info{min-width:0}
+  .player-big-avatar{width:54px;height:54px;flex:0 0 54px}
+  .player-showcase-name{
+    font-size:1.18rem;
+    line-height:1.18;
+    max-width:100%;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .player-tags .base-line{font-size:.66rem}
+  .bid-panel{min-height:0;padding:14px;margin-bottom:12px}
+  .current-bid-num{font-size:2.15rem;line-height:1.05}
+  .timer-row{margin-top:14px}
+  .timer-num{font-size:2.2rem;margin-bottom:10px}
+  .side-purse-card{
+    display:grid;
+    grid-template-columns:1fr auto;
+    align-items:end;
+    gap:2px 12px;
+    padding:0 0 10px;
+    margin-bottom:10px;
+  }
+  .side-purse-label,.side-purse-slots{grid-column:1}
+  .side-purse-value{grid-column:2;grid-row:1 / span 2;font-size:1.05rem;text-align:right}
+  #page-auction .sidebar-card{margin-bottom:10px}
+  #page-auction .s-section-title{padding:10px 12px 7px;font-size:.7rem}
+  .team-purse-item{min-height:54px;padding:9px 12px}
+  .tpi-name{font-size:.82rem}
+  .tpi-purse{font-size:.78rem}
+  .bid-quick-grid{
+    left:10px;
+    right:10px;
+    bottom:calc(58px + env(safe-area-inset-bottom));
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;
+    z-index:490;
+  }
+  .bid-q-btn{
+    height:48px;
+    min-width:0;
+    border-radius:10px;
+    font-size:.9rem;
+  }
+  .custom-bid-row{
+    left:10px;
+    right:10px;
+    bottom:calc(112px + env(safe-area-inset-bottom));
+    width:auto;
+    display:flex;
+    gap:8px;
+  }
+  .custom-bid-row .input{
+    display:block;
+    height:42px;
+    background:#101010;
+    border-color:#2f2a14;
+    color:#fff;
+  }
+  #btn-bid{
+    display:inline-flex;
+    width:72px;
+    height:42px;
+    flex:0 0 72px;
+  }
+  .my-purse-note{
+    left:10px;
+    right:10px;
+    bottom:calc(10px + env(safe-area-inset-bottom));
+    font-size:.7rem;
+  }
+  .auction-chat-pill{
+    right:12px;
+    bottom:calc(168px + env(safe-area-inset-bottom));
+    height:34px;
+  }
+  .host-bar{
+    top:108px;
+    height:auto;
+    padding:8px 10px;
+    overflow-x:auto;
+  }
+  .host-bar-btns{
+    justify-content:flex-start;
+    min-width:max-content;
+  }
+}
 </style>
 </head>
 <body>
@@ -796,11 +931,11 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
           <div class="retention-grid">
             <div class="field">
               <label class="label">Manager</label>
-              <select class="input" id="ret-manager" onchange="syncRetentionBudgetInput()"></select>
+              <select class="input" id="ret-manager" onchange="syncRetentionBudgetInput(false)"></select>
             </div>
             <div class="field">
               <label class="label">Auction purse</label>
-              <input class="input" id="ret-purse" type="number" min="0" step="0.25" placeholder="e.g. 75"/>
+              <input class="input" id="ret-purse" type="number" min="0" step="0.25" placeholder="e.g. 75" oninput="this.dataset.dirty='1'"/>
             </div>
             <div class="field span-2">
               <label class="label">Player to retain</label>
@@ -1746,8 +1881,8 @@ function renderRetentionPanel(){
     ? available.map(p=>`<option value="${p.id}">${escapeHTML(p.name)} - ${roleName(p.role)} - ${formatMoney(p.base)}</option>`).join('')
     : '<option value="">No available players</option>';
 
-  syncRetentionBudgetInput(false);
-  const retainedManagers=(room.managers||[]).filter(m=>(m.squad||[]).some(p=>p.retained));
+  syncRetentionBudgetInput(true);
+  const retainedManagers=(room.managers||[]).filter(m=>(m.squad||[]).some(p=>p.retained) || typeof m.retentionBudget==='number');
   list.innerHTML=retainedManagers.length ? retainedManagers.map(m=>{
     const retained=(m.squad||[]).filter(p=>p.retained);
     return `
@@ -1759,12 +1894,12 @@ function renderRetentionPanel(){
           </div>
           <span class="badge badge-amber">${formatMoney(managerBudgetCap(m,room))}</span>
         </div>
-        ${retained.map(p=>`
+        ${retained.length ? retained.map(p=>`
           <div class="retention-player">
             <span class="retention-player-name">${escapeHTML(p.name)} ${roleBadge(p.role)}</span>
             <button class="retention-remove" onclick="removeRetention('${m.id}','${p.playerId}')">Remove</button>
           </div>
-        `).join('')}
+        `).join('') : '<div class="small dimmed" style="padding-top:4px">Custom purse set for this manager.</div>'}
       </div>
     `;
   }).join('') : '<div class="small dimmed" style="padding:8px 0">No retained players yet.</div>';
@@ -1777,8 +1912,20 @@ function syncRetentionBudgetInput(keepTyped=true){
   if(!purseInput) return;
   const mgr=(room.managers||[]).find(m=>m.id===mgrId) || room.managers?.[0];
   if(!mgr) return;
-  if(keepTyped && document.activeElement===purseInput && purseInput.value) return;
+  const sameManager=purseInput.dataset.managerId===mgr.id;
+  if(keepTyped && sameManager && purseInput.dataset.dirty==='1') return;
   purseInput.value=managerBudgetCap(mgr,room);
+  purseInput.dataset.managerId=mgr.id;
+  purseInput.dataset.dirty='0';
+}
+
+function readRetentionPurse(){
+  const raw=document.getElementById('ret-purse')?.value;
+  if(raw==='' || raw===null || raw===undefined) return null;
+  const parsed=parseFloat(raw);
+  if(!Number.isFinite(parsed)) return null;
+  const purse=normalizeAmount(parsed);
+  return Number.isFinite(purse) && purse>=0 ? purse : null;
 }
 
 async function addRetention(){
@@ -1787,12 +1934,12 @@ async function addRetention(){
   ensureRoomStructures(room);
   const mgrId=document.getElementById('ret-manager').value;
   const playerId=document.getElementById('ret-player').value;
-  const purse=normalizeAmount(document.getElementById('ret-purse').value);
+  const purse=readRetentionPurse();
   const mgr=room.managers.find(m=>m.id===mgrId);
   const player=(room.players||[]).find(p=>p.id===playerId);
   if(!mgr||!player){toast('Choose a manager and player','error');return;}
   if(player.status!=='pending'){toast(player.name+' is not available for retention','error');return;}
-  if(!purse){toast('Enter the auction purse for this manager','error');return;}
+  if(purse===null){toast('Enter the auction purse for this manager','error');return;}
   if(!Array.isArray(mgr.squad)) mgr.squad=[];
   if(mgr.squad.length>=room.settings.squadSize){toast(mgr.name+' squad is already full','error');return;}
   if(mgr.squad.some(p=>p.playerId===player.id)){toast(player.name+' is already in this squad','info');return;}
@@ -1806,6 +1953,8 @@ async function addRetention(){
   mgr.squad.push({playerId:player.id,name:player.name,role:player.role,nation:player.nation,price:0,retained:true});
   recalcManagerPurse(mgr,room);
   await saveRoom(room); G.room=room;
+  const purseInput=document.getElementById('ret-purse');
+  if(purseInput) purseInput.dataset.dirty='0';
   renderLobby();
   toast(player.name+' retained by '+mgr.name,'success');
 }
@@ -1815,11 +1964,13 @@ async function updateRetentionPurse(){
   if(!room||G.myId!==room.hostId){toast('Only host can update purses','error');return;}
   ensureRoomStructures(room);
   const mgr=room.managers.find(m=>m.id===document.getElementById('ret-manager').value);
-  const purse=normalizeAmount(document.getElementById('ret-purse').value);
-  if(!mgr||!purse){toast('Choose a manager and purse','error');return;}
+  const purse=readRetentionPurse();
+  if(!mgr||purse===null){toast('Choose a manager and purse','error');return;}
   mgr.retentionBudget=purse;
   recalcManagerPurse(mgr,room);
   await saveRoom(room); G.room=room;
+  const purseInput=document.getElementById('ret-purse');
+  if(purseInput) purseInput.dataset.dirty='0';
   renderLobby();
   toast(mgr.name+' purse updated','success');
 }
