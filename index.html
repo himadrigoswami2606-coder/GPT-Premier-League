@@ -19,13 +19,13 @@ import { getDatabase, ref, set, get, update, onValue, push, serverTimestamp }
 // Get it free at: https://console.firebase.google.com
 // Create project → Realtime Database → Start in test mode → copy config
 const firebaseConfig = {
-  apiKey: "PASTE_YOUR_API_KEY",
-  authDomain: "PASTE_YOUR_AUTH_DOMAIN",
-  databaseURL: "PASTE_YOUR_DATABASE_URL",
-  projectId: "PASTE_YOUR_PROJECT_ID",
-  storageBucket: "PASTE_YOUR_STORAGE_BUCKET",
-  messagingSenderId: "PASTE_YOUR_MESSAGING_SENDER_ID",
-  appId: "PASTE_YOUR_APP_ID"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "gpt-premier-league.firebaseapp.com",
+  databaseURL: "https://gpt-premier-league-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "gpt-premier-league",
+  storageBucket: "gpt-premier-league.firebasestorage.app",
+  messagingSenderId: "821453669307",
+  appId: "1:821453669307:web:490e5ab6de73df50497a9e"
 };
 // ────────────────────────────────────────────────────────────────
 
@@ -35,9 +35,9 @@ let firebaseReady = false;
 try {
   app = initializeApp(firebaseConfig);
   db = getDatabase(app);
-  firebaseReady = firebaseConfig.databaseURL !== "PASTE_YOUR_DATABASE_URL";
+  firebaseReady = !!firebaseConfig.databaseURL;
 } catch(e) {
-  console.warn("Firebase not configured, using localStorage fallback");
+  console.warn("Firebase not configured");
 }
 
 // Expose to window so non-module scripts can call
@@ -1394,45 +1394,52 @@ function isManagerOnline(manager){
 }
 
 // ── FIREBASE / LOCALSTORAGE ADAPTER ──────────────────
-function lsKey(code){ return 'ca_room_'+code; }
+function firebaseRoomStateReady(){
+  return !!(G.fbReady && G.fbDb && G.fbRef && G.fbGet && G.fbSet && G.fbOnValue);
+}
+
+function requireFirebaseRoomState(){
+  if(firebaseRoomStateReady()) return true;
+  toast('Connect Firebase to create or join rooms','error');
+  showPage('firebase');
+  return false;
+}
 
 async function saveRoom(room){
   ensureRoomStructures(room);
-  if(G.fbReady && G.fbDb){
-    try{
-      await G.fbSet(G.fbRef(G.fbDb, 'rooms/'+room.code), room);
-      return;
-    } catch(e){ console.warn('Firebase write failed, using LS', e); }
+  if(!requireFirebaseRoomState()) throw new Error('Firebase is not configured');
+  try{
+    await G.fbSet(G.fbRef(G.fbDb, 'rooms/'+room.code), room);
+  } catch(e){
+    console.warn('Firebase write failed', e);
+    toast('Could not save room to Firebase','error');
+    throw e;
   }
-  localStorage.setItem(lsKey(room.code), JSON.stringify(room));
 }
 
 async function loadRoom(code){
-  if(G.fbReady && G.fbDb){
-    try{
-      const snap = await G.fbGet(G.fbRef(G.fbDb, 'rooms/'+code));
-      if(snap.exists()) return ensureRoomStructures(snap.val());
-      return null;
-    } catch(e){ console.warn('Firebase read failed', e); }
+  if(!requireFirebaseRoomState()) return null;
+  try{
+    const snap = await G.fbGet(G.fbRef(G.fbDb, 'rooms/'+code));
+    if(snap.exists()) return ensureRoomStructures(snap.val());
+    return null;
+  } catch(e){
+    console.warn('Firebase read failed', e);
+    toast('Could not check room in Firebase','error');
+    return null;
   }
-  const d = localStorage.getItem(lsKey(code));
-  return d ? ensureRoomStructures(JSON.parse(d)) : null;
 }
 
 function subscribeRoom(){
-  if(G.fbReady && G.fbDb && G.fbOnValue){
-    if(G.fbListener){ G.fbListener(); G.fbListener = null; }
-    G.fbListener = G.fbOnValue(G.fbRef(G.fbDb,'rooms/'+G.roomCode), snap=>{
-      if(snap.exists()){
-        G.room = ensureRoomStructures(snap.val());
-        renderCurrentPage();
-      }
-    });
-  } else {
-    // Poll localStorage every 1.5s
-    if(G._pollInterval) clearInterval(G._pollInterval);
-    G._pollInterval = setInterval(syncRoom, 1500);
-  }
+  if(!requireFirebaseRoomState() || !G.roomCode) return;
+  if(G._pollInterval) clearInterval(G._pollInterval);
+  if(G.fbListener){ G.fbListener(); G.fbListener = null; }
+  G.fbListener = G.fbOnValue(G.fbRef(G.fbDb,'rooms/'+G.roomCode), snap=>{
+    if(snap.exists()){
+      G.room = ensureRoomStructures(snap.val());
+      renderCurrentPage();
+    }
+  });
   touchPresence();
   if(G._presenceInterval) clearInterval(G._presenceInterval);
   G._presenceInterval = setInterval(touchPresence, 5000);
@@ -1514,7 +1521,8 @@ function signOut(){
   if(G.fbListener){ G.fbListener(); G.fbListener=null; }
   if(G.timerInterval){ clearInterval(G.timerInterval); G.timerInterval=null; }
   if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
-  localStorage.clear();
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+  localStorage.removeItem('ca_session');
   G.myId=''; G.myName=''; G.isHost=false;
   G.room=null; G.roomCode=''; G.authUser=null; G.pendingAction='';
   G.googlePromptRendered = false;
@@ -1539,16 +1547,31 @@ function saveFirebaseConfig(){
   };
   if(!cfg.databaseURL){ toast('Database URL is required','error'); return; }
   localStorage.setItem('fb_config', JSON.stringify(cfg));
-  toast('Firebase config saved! Please replace the config at the top of this file for permanent setup.','info');
+  toast('Firebase config saved. Reconnecting...','info');
+  setTimeout(()=>location.reload(), 700);
+}
+function skipFirebase(){
+  toast('Firebase is required for shared rooms','info');
   showPage('setup');
 }
-function skipFirebase(){ showPage('setup'); }
 
 // ── CREATE ROOM ───────────────────────────────────────
 function genId(){ return Math.random().toString(36).slice(2,11) }
-function genCode(){ return Math.random().toString(36).slice(2,8).toUpperCase() }
+function genCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:6},()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+async function generateAvailableRoomCode(){
+  for(let i=0;i<12;i++){
+    const code = genCode();
+    if(!await loadRoom(code)) return code;
+  }
+  throw new Error('Could not generate an available room code');
+}
 
 async function createRoom(){
+  if(!requireFirebaseRoomState()) return;
   const name = document.getElementById('c-name').value.trim();
   const rname = document.getElementById('c-room').value.trim()||'Mega Auction';
   const purse = parseInt(document.getElementById('c-purse').value)||100;
@@ -1557,7 +1580,14 @@ async function createRoom(){
   if(!name){ toast('Enter your name','error'); return; }
 
   G.myId = genId(); G.myName = name; G.isHost = true;
-  const code = genCode(); G.roomCode = code;
+  let code = '';
+  try{
+    code = await generateAvailableRoomCode();
+  } catch(e){
+    toast('Could not create a room code','error');
+    return;
+  }
+  G.roomCode = code;
 
   const room = {
     code, name: rname, hostId: G.myId, hostName: name,
@@ -1567,7 +1597,12 @@ async function createRoom(){
     auction:{ active:false, currentIdx:0, currentBid:0, currentBidder:'', currentBidderId:'', timerStart:0, log:[] },
     started:false, ended:false
   };
-  await saveRoom(room);
+  try{
+    await saveRoom(room);
+  } catch(e){
+    G.roomCode = ''; G.room = null; G.isHost = false;
+    return;
+  }
   G.room = room;
   saveSession();
   closeModal();
@@ -1578,13 +1613,14 @@ async function createRoom(){
 
 // ── JOIN ROOM ─────────────────────────────────────────
 async function joinRoom(){
+  if(!requireFirebaseRoomState()) return;
   const name = document.getElementById('j-name').value.trim();
   const code = document.getElementById('j-code').value.trim().toUpperCase();
   if(!name){ toast('Enter your name','error'); return; }
-  if(code.length<4){ toast('Enter room code','error'); return; }
+  if(code.length!==6){ toast('Enter 6-character room code','error'); return; }
 
   const room = await loadRoom(code);
-  if(!room){ toast('Room not found! Check the code.','error'); return; }
+  if(!room){ toast('Room not found','error'); return; }
   if(room.started){ toast('Auction already started — you can still watch!','info'); }
   if(room.managers.find(m=>m.name.toLowerCase()===name.toLowerCase())){
     // Re-joining
@@ -1593,7 +1629,8 @@ async function joinRoom(){
     G.myName = name; G.isHost = room.hostId===G.myId;
     G.roomCode = code; G.room = room;
     returningManager.lastSeen = Date.now();
-    await saveRoom(room);
+    try{ await saveRoom(room); }
+    catch(e){ return; }
     saveSession(); closeModal(); subscribeRoom();
     showPage(room.started ? 'auction' : 'lobby');
     toast('Welcome back, '+name+'!','success'); return;
@@ -1601,7 +1638,8 @@ async function joinRoom(){
 
   G.myId = genId(); G.myName = name; G.isHost = false; G.roomCode = code;
   room.managers.push({ id:G.myId, name, purse: room.settings.purse, squad:[], lastSeen:Date.now() });
-  await saveRoom(room);
+  try{ await saveRoom(room); }
+  catch(e){ G.roomCode = ''; return; }
   G.room = room;
   saveSession(); closeModal(); subscribeRoom();
   showPage(room.started ? 'auction' : 'lobby');
@@ -2528,12 +2566,6 @@ function toast(msg,type='info'){
   setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(10px)';t.style.transition='all .25s';setTimeout(()=>t.remove(),260);},3000);
 }
 
-// Storage event for cross-tab
-window.addEventListener('storage',e=>{
-  if(G.roomCode && e.key===lsKey(G.roomCode)){
-    try{ G.room=JSON.parse(e.newValue); renderCurrentPage(); }catch(ex){}
-  }
-});
 </script>
 </body>
 </html>
