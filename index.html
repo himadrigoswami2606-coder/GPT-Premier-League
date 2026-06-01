@@ -658,19 +658,26 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   #page-auction .auction-topbar{
     position:sticky;
     top:54px;
-    height:auto;
-    min-height:54px;
-    padding:8px 12px;
-    align-items:flex-start;
-    gap:8px;
+    height:36px;
+    min-height:36px;
+    max-height:36px;
+    padding:0 10px;
+    align-items:center;
+    gap:6px;
+    flex-wrap:nowrap;
+    overflow:hidden;
   }
   #page-auction .auction-topbar>div:last-child{
-    width:100%;
-    justify-content:space-between;
-    gap:8px;
-    font-size:.72rem;
+    width:auto;
+    flex:1;
+    justify-content:flex-end;
+    gap:6px;
+    font-size:.68rem;
+    flex-wrap:nowrap;
+    overflow:hidden;
   }
-  #page-auction .auction-topbar .btn{padding:5px 8px;font-size:.7rem}
+  #page-auction .live-pill span:last-child{font-size:.78rem}
+  #page-auction .auction-topbar .btn{padding:3px 7px;font-size:.65rem;height:26px}
   #page-auction .host-bar.hidden + .auction-main-grid,
   #page-auction .host-bar:not(.hidden) + .auction-main-grid{
     margin-top:0;
@@ -781,15 +788,17 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     height:34px;
   }
   .host-bar{
-    top:108px;
+    top:90px;
     height:auto;
-    padding:8px 10px;
+    padding:5px 10px;
     overflow-x:auto;
   }
   .host-bar-btns{
     justify-content:flex-start;
     min-width:max-content;
+    gap:6px;
   }
+  .host-ctrl-btn{min-height:26px;height:26px;padding:0 10px;font-size:.65rem}
 }
 
 @media(max-width:767px){
