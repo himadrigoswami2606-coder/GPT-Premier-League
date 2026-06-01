@@ -637,7 +637,23 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .host-ctrl-btn.btn-amber:hover{background:#180b0c;border-color:#7a2e33;color:#ff6969}
 
 @media(max-width:700px){
-  #page-auction{padding-bottom:138px;overflow-x:hidden}
+  #topnav{
+    height:54px;
+    padding:0 10px;
+    overflow:hidden;
+  }
+  .nav-logo{gap:7px;font-size:1rem;line-height:1}
+  .nav-logo-icon{width:34px;height:34px;flex:0 0 34px}
+  .nav-user{
+    max-width:calc(100vw - 154px);
+    height:38px;
+    padding:4px 5px 4px 8px;
+    gap:7px;
+  }
+  .nav-user-pic{width:28px;height:28px}
+  .nav-user-name{font-size:.74rem}
+  .nav-user .btn{padding:7px 10px;font-size:.72rem}
+  #page-auction{padding-bottom:96px;overflow-x:hidden}
   #page-auction .auction-topbar{
     position:sticky;
     top:54px;
@@ -654,6 +670,10 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     font-size:.72rem;
   }
   #page-auction .auction-topbar .btn{padding:5px 8px;font-size:.7rem}
+  #page-auction .host-bar.hidden + .auction-main-grid,
+  #page-auction .host-bar:not(.hidden) + .auction-main-grid{
+    margin-top:0;
+  }
   #page-auction .auction-main-grid{
     grid-template-columns:minmax(0,1fr);
     min-height:0;
@@ -673,12 +693,12 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   }
   .block-header{
     min-height:0;
-    padding:14px;
+    padding:16px 14px 14px;
     margin-bottom:10px;
     align-items:center;
   }
   .player-showcase{gap:12px;min-width:0}
-  .player-showcase-info{min-width:0}
+  .player-showcase-info{min-width:0;flex:1}
   .player-big-avatar{width:54px;height:54px;flex:0 0 54px}
   .player-showcase-name{
     font-size:1.18rem;
@@ -723,25 +743,13 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     font-size:.9rem;
   }
   .custom-bid-row{
-    left:10px;
-    right:10px;
-    bottom:calc(112px + env(safe-area-inset-bottom));
-    width:auto;
-    display:flex;
-    gap:8px;
+    display:none;
   }
   .custom-bid-row .input{
-    display:block;
-    height:42px;
-    background:#101010;
-    border-color:#2f2a14;
-    color:#fff;
+    display:none;
   }
   #btn-bid{
-    display:inline-flex;
-    width:72px;
-    height:42px;
-    flex:0 0 72px;
+    display:none!important;
   }
   .my-purse-note{
     left:10px;
@@ -751,7 +759,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   }
   .auction-chat-pill{
     right:12px;
-    bottom:calc(168px + env(safe-area-inset-bottom));
+    bottom:calc(112px + env(safe-area-inset-bottom));
     height:34px;
   }
   .host-bar{
