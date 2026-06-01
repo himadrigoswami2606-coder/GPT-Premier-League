@@ -297,6 +297,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .player-big-avatar .role-ring{position:absolute;inset:-4px;border-radius:50%;border:2px solid transparent}
 .player-showcase-info{flex:1;min-width:0}
 .player-showcase-name{font-family:var(--font-display);font-size:1.5rem;color:#fff;line-height:1.1;margin-bottom:6px}
+.mobile-player-name{display:none}
 .player-tags{display:flex;flex-wrap:wrap;gap:5px}
 
 .bid-panel{background:var(--s2);border-radius:var(--r2);padding:14px;margin-bottom:14px}
@@ -692,38 +693,36 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     background:#050607;
   }
   .block-header{
+    display:block;
     min-height:0;
     padding:12px 14px 14px;
     margin-bottom:10px;
-    align-items:center;
   }
-  .player-showcase{
-    display:grid;
-    grid-template-columns:54px minmax(0,1fr);
-    grid-template-areas:
-      "name name"
-      "avatar tags";
-    gap:10px 12px;
-    width:100%;
-    min-width:0;
-  }
-  .player-showcase-info{display:contents}
-  .player-big-avatar{grid-area:avatar;width:54px;height:54px;flex:0 0 54px}
-  .player-showcase-name{
-    grid-area:name;
-    display:block!important;
-    color:#fff!important;
-    font-size:1.2rem;
+  .mobile-player-name{
+    display:block;
+    color:#fff;
+    font-size:1.28rem;
     line-height:1.2;
-    min-height:1.45em;
-    max-width:100%;
+    font-weight:900;
+    margin:0 0 10px;
+    min-height:1.55em;
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
-    margin:0;
+  }
+  .player-showcase{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    width:100%;
+    min-width:0;
+  }
+  .player-showcase-info{min-width:0;flex:1}
+  .player-big-avatar{width:54px;height:54px;flex:0 0 54px}
+  .player-showcase-name{
+    display:none!important;
   }
   .player-tags{
-    grid-area:tags;
     align-self:center;
     width:100%;
   }
@@ -1031,6 +1030,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
           <div class="block-header">
             <div class="block-num" id="block-num-label">Player 0 of 0</div>
             <span class="badge badge-green">🎯 On the Block</span>
+            <div class="mobile-player-name" id="mobile-block-player-name">-</div>
           <div class="player-showcase">
             <div class="player-big-avatar" id="block-avatar-div">
               <span id="block-emoji">🏏</span>
@@ -2285,6 +2285,8 @@ function renderAuction(){
     : 'Player '+(a.currentIdx+1)+' of '+room.players.length;
   document.getElementById('block-emoji').textContent=playerInitials(cp.name);
   document.getElementById('block-player-name').textContent=cp.name;
+  const mobilePlayerName=document.getElementById('mobile-block-player-name');
+  if(mobilePlayerName) mobilePlayerName.textContent=cp.name;
   document.getElementById('block-player-tags').innerHTML=`
     <span class="badge"><span class="role-chip">${cp.role}</span><span class="nation-dot"></span>${escapeHTML(cp.nation)}</span>
     <span class="base-line">Base Price <b>${formatMoney(cp.base)}</b></span>
