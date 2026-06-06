@@ -1741,12 +1741,28 @@ async function transactRoom(updateFn){
   if(!requireFirebaseRoomState() || !G.fbRunTransaction) throw new Error('Firebase transactions unavailable');
   let outcome = { status:'empty' };
   try{
-    const result = await G.fbRunTransaction(G.fbRef(G.fbDb, 'rooms/'+G.roomCode), current=>{
+    const path = 'rooms/'+G.roomCode;
+    console.log('[TRANSACT] Transaction path:', path);
+    // Fetch a pre-transaction snapshot for diagnostics
+    try{
+      const preSnap = await G.fbGet(G.fbRef(G.fbDb, path));
+      console.log('[TRANSACT] Pre-transaction snapshot exists:', preSnap.exists());
+      if(preSnap.exists()){
+        const v = preSnap.val();
+        console.log('[TRANSACT] Pre-snap managers:', (v && v.managers) ? (Array.isArray(v.managers) ? v.managers.length : Object.keys(v.managers).length) : 0);
+      }
+    } catch(psErr){
+      console.warn('[TRANSACT] Could not read pre-snapshot for diagnostics', psErr);
+    }
+
+    const result = await G.fbRunTransaction(G.fbRef(G.fbDb, path), current=>{
       if(!current){
         outcome = { status:'missing' };
-        console.warn('[TRANSACT] Room missing during transaction');
+        console.warn('[TRANSACT] Room missing during transaction for path:', path, 'roomCode:', G.roomCode);
         return;
       }
+      // log brief shape inside transaction
+      try{ console.log('[TRANSACT] Inside transaction, current keys:', Object.keys(current).slice(0,10)); } catch(_){}
       ensureRoomStructures(current);
       const next = updateFn(current);
       if(!next){
@@ -1761,7 +1777,7 @@ async function transactRoom(updateFn){
     console.log('[TRANSACT] Result:', { committed: result.committed, hasSnapshot: result.snapshot?.exists() });
     return { committed:result.committed, room:result.snapshot.exists() ? ensureRoomStructures(result.snapshot.val()) : null, outcome };
   } catch(e){
-    console.error('[TRANSACT] Error:', e.message, e);
+    console.error('[TRANSACT] Error:', e && e.message, e);
     throw e;
   }
 }
