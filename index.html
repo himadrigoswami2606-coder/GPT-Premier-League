@@ -120,12 +120,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .badge-purple{background:rgba(167,139,250,.12);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
 .badge-ghost{background:var(--s3);color:var(--t2);border:1px solid var(--bd2)}
 
-/* LATENCY BADGE */
-#latency-badge{position:fixed;left:16px;bottom:84px;z-index:950;padding:8px 12px;border-radius:12px;background:rgba(12,15,12,.9);backdrop-filter:blur(6px);font-size:.82rem;display:flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.03)}
-#latency-badge .dot{width:10px;height:10px;border-radius:50%}
-#latency-badge.green{color:var(--gl);border-color:rgba(34,197,94,.12)}
-#latency-badge.amber{color:var(--amber);border-color:rgba(245,158,11,.12)}
-#latency-badge.red{color:var(--red);border-color:rgba(244,63,94,.12)}
+
 
 /* ═══════════════════════ NAV ═══════════════════════ */
 #topnav{position:fixed;top:0;left:0;right:0;z-index:500;height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:rgba(7,9,9,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--bd)}
@@ -1259,10 +1254,6 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 </div>
 
 <div id="toasts"></div>
-<div id="latency-badge" class="badge-ghost">
-  <div class="dot" style="background:var(--t2)"></div>
-  <div id="latency-text" class="small">Latency: -- ms</div>
-</div>
 
 <!-- ════════ MAIN SCRIPT ════════ -->
 <script>
@@ -1413,8 +1404,7 @@ function init(){
 
   renderIPLTeamButtons();
   wireRealtimeInputs();
-  // start periodic latency monitoring for UI indicator
-  try{ startLatencyMonitor(); }catch(e){}
+  // latency monitor removed
   try{ initTheme(); }catch(e){}
 }
 
@@ -3680,59 +3670,7 @@ function toast(msg,type='info'){
   setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(10px)';t.style.transition='all .25s';setTimeout(()=>t.remove(),260);},3000);
 }
 
-// ── LATENCY MONITOR ───────────────────────────────────
-G.latencyMs = null;
-G.latencyIntervalId = null;
-async function pingLatencyOnce(){
-  const start = Date.now();
-  let ok=false;
-  try{
-    if(G.fbGet && G.fbRef && G.fbDb){
-      // Use serverTimeOffset: a real round-trip to Firebase that always works
-      // unlike .info/connected which only reflects the persistent socket state
-      try{
-        const snap = await G.fbGet(G.fbRef(G.fbDb,'.info/serverTimeOffset'));
-        ok = snap && snap.exists(); // if we got a value, we're online
-      } catch(e){ ok = false; }
-    }
-    // No favicon fallback — it causes 404 spam on GitHub Pages.
-    // Firebase serverTimeOffset read above is sufficient for latency measurement.
-  }catch(e){ ok=false; }
-  const ms = Date.now()-start;
-  // smoothing: exponential moving average
-  if(typeof G.latencyMs !== 'number') G.latencyMs = ms;
-  else G.latencyMs = Math.round(G.latencyMs*0.6 + ms*0.4);
-  updateLatencyUI(ok, G.latencyMs);
-  return { ok, ms: G.latencyMs };
-}
-
-function updateLatencyUI(ok, ms){
-  const el = document.getElementById('latency-badge');
-  const text = document.getElementById('latency-text');
-  if(!el || !text) return;
-  const dot = el.querySelector('.dot');
-  // Normalize classes: ensure id stays and manage status classes via classList
-  el.classList.remove('badge-ghost','green','amber','red');
-  if(!ok){
-    el.classList.add('badge-ghost');
-    text.textContent = 'Latency: offline';
-    if(dot) dot.style.background='var(--t3)';
-    return;
-  }
-  text.textContent = 'Latency: '+ms+' ms';
-  if(ms<60){ el.classList.add('green'); if(dot) dot.style.background='var(--gl)'; }
-  else if(ms<150){ el.classList.add('amber'); if(dot) dot.style.background='var(--amber)'; }
-  else { el.classList.add('red'); if(dot) dot.style.background='var(--red)'; }
-}
-
-function startLatencyMonitor(){
-  if(G.latencyIntervalId) return;
-  // initial ping
-  pingLatencyOnce().catch(()=>{});
-  G.latencyIntervalId = setInterval(()=>{ pingLatencyOnce().catch(()=>{}); }, 4000);
-}
-
-function stopLatencyMonitor(){ if(G.latencyIntervalId){ clearInterval(G.latencyIntervalId); G.latencyIntervalId=null; } }
+// latency monitor removed
 
 // ── THEME TOGGLE ──────────────────────────────────────
 function applyThemeClass(mode){
