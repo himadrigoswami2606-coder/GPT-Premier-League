@@ -1366,6 +1366,7 @@ function init(){
   G.fbRef = fb.ref || null;
   G.fbGet = fb.get || null;
   G.fbSet = fb.set || null;
+  G.fbPush = fb.push || null;
   G.fbUpdate = fb.update || null;
   G.fbOnValue = fb.onValue || null;
   G.fbRunTransaction = fb.runTransaction || null;
@@ -2115,9 +2116,27 @@ async function joinRoom(){
   } catch(e){
     console.error('[JOIN] Exception caught:', e.message, e.stack);
     console.error('[JOIN] Full error:', e);
-    toast('Error: '+e.message || 'Could not join room. Try again.','error');
-    G.roomCode = '';
-    return;
+    // Attempt a non-transactional fallback if transactions fail
+    try{
+      console.log('[JOIN] Attempting fallback join via push/update');
+      if(!G.fbPush || !G.fbRef || !G.fbUpdate || !G.fbGet) throw new Error('Fallback Firebase APIs unavailable');
+      const mgrObj = { id:newId, name, purse: existingRoom?.settings?.purse || 0, squad:[] };
+      const mgrRef = G.fbRef(G.fbDb, 'rooms/'+G.roomCode+'/managers');
+      await G.fbPush(mgrRef, mgrObj);
+      const presRef = G.fbRef(G.fbDb, 'rooms/'+G.roomCode+'/presence/'+newId);
+      await G.fbUpdate(presRef, { lastSeen: Date.now(), online:true });
+      // Reload room state
+      const r = await loadRoom(G.roomCode);
+      if(!r) throw new Error('Fallback join failed to load room');
+      G.room = r;
+      joinOutcome = { status:'joined', id:newId };
+      console.log('[JOIN] Fallback join succeeded', { id:newId, code:G.roomCode });
+    } catch(fe){
+      console.error('[JOIN] Fallback failed:', fe);
+      toast('Could not join room. Try again.','error');
+      G.roomCode = '';
+      return;
+    }
   }
 
   G.myId = joinOutcome?.id || newId;
