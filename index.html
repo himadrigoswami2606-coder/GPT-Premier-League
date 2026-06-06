@@ -3247,7 +3247,7 @@ async function doBid(amount, sourceBtn=null){
   }
   bid=normalizeAmount(bid);
   try{
-    const room=G.room;
+    let room=G.room;
     if(!room){ toast('Room not found','error'); finishBid(); return; }
     const myM=room.managers.find(m=>m.id===G.myId);
     if(!myM){ toast('You are not in this room','error'); finishBid(); return; }
@@ -3280,6 +3280,11 @@ async function doBid(amount, sourceBtn=null){
     let result=null; let success=false;
     const maxAttempts=3;
     for(let attempt=1; attempt<=maxAttempts; attempt++){
+      // Ensure we operate on latest room/auction state before each attempt
+      room = G.room;
+      localAuction = room?.auction || {};
+      cp = room?.players?.[localAuction.currentIdx];
+
       G.telemetry.txTotal++;
       result = await transactAuction(a=>{
         if(!a||!a.active) return { outcome:{status:'inactive'} };
@@ -3295,7 +3300,7 @@ async function doBid(amount, sourceBtn=null){
         a.currentBidderId=myM.id;
         a.timerStart=now;
         a.timerEndAt=now+roomTimerMs(room);
-        a.turnId=cp.id+'-'+a.timerStart;
+        a.turnId=(cp?cp.id:'')+'-'+a.timerStart;
         return { outcome:{status:'ok'} };
       });
 
@@ -3311,7 +3316,7 @@ async function doBid(amount, sourceBtn=null){
         success=true; break;
       }
 
-      // Non-ok outcomes (inactive/paused/low/purse/closed/stale) should not be retried
+      // Non-ok outcomes (inactive/paused/low/purse/closed) should not be retried
       if(o.status && ['inactive','paused','low','purse','closed'].includes(o.status)){
         if(result.auction) G.room.auction=result.auction;
         // show message and stop retrying
