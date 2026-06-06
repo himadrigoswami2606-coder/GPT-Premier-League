@@ -719,17 +719,19 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   }
   /* Team avatar in top bar */
   #mob-team-avatar{
-    width:32px;height:32px;
-    border-radius:50%;
+    height:32px;
+    padding:0 12px;
+    border-radius:8px;
     background:#1e1e22;
     border:1px solid #3a3a40;
     color:#e4e4e8;
-    font-weight:900;
-    font-size:.82rem;
+    font-weight:700;
+    font-size:.78rem;
     display:inline-flex;
     align-items:center;
-    justify-content:center;
+    gap:5px;
     cursor:pointer;
+    white-space:nowrap;
   }
 
   /* ── Single-column layout ── */
@@ -1308,7 +1310,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
           <span class="pp-amount" id="mob-purse-amount">100Cr</span>
           <span class="pp-slots" id="mob-purse-slots">0/15</span>
         </div>
-        <div id="mob-team-avatar" onclick="showPage('teams')" title="View Teams">H</div>
+        <button id="mob-team-avatar" onclick="showPage('teams')">👥 Teams</button>
         <!-- desktop: teams button -->
         <button class="btn btn-ghost btn-sm" onclick="showPage('teams')" style="display:none" id="btn-teams-top">👥 Teams</button>
       </div>
@@ -3087,6 +3089,11 @@ function renderAuction(){
     const sideSlots=document.getElementById('side-purse-slots');
     if(sidePurse) sidePurse.textContent=formatMoney(myM.purse);
     if(sideSlots) sideSlots.textContent=squadCount+' of '+squadSize+' slots filled';
+    // Mobile top-bar purse pill — live values
+    const mobAmt=document.getElementById('mob-purse-amount');
+    const mobSlots=document.getElementById('mob-purse-slots');
+    if(mobAmt) mobAmt.textContent=formatMoney(myM.purse);
+    if(mobSlots) mobSlots.textContent=squadCount+'/'+squadSize;
   }
 
   // Teams
@@ -3331,6 +3338,11 @@ function renderBidState(){
     const sideSlots=document.getElementById('side-purse-slots');
     if(sidePurse) sidePurse.textContent=formatMoney(myM.purse);
     if(sideSlots) sideSlots.textContent=squadCount+' of '+squadSize+' slots filled';
+    // Mobile top-bar purse pill — live values
+    const mobAmt=document.getElementById('mob-purse-amount');
+    const mobSlots=document.getElementById('mob-purse-slots');
+    if(mobAmt) mobAmt.textContent=formatMoney(myM.purse);
+    if(mobSlots) mobSlots.textContent=squadCount+'/'+squadSize;
   }
 }
 
