@@ -1255,7 +1255,6 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   <p class="winner-sub" id="winner-sub"></p>
   <div class="winner-actions">
     <button class="btn btn-outline btn-lg" onclick="gotoTeams()">👥 View Teams</button>
-    <button class="btn btn-primary btn-lg" onclick="gotoHome()">🏠 Home</button>
   </div>
 </div>
 
@@ -3675,11 +3674,6 @@ function showWinner(room){
 }
 function hideWinner(){document.getElementById('winner-overlay').classList.remove('show');}
 function gotoTeams(){hideWinner();showPage('teams');}
-function gotoHome(){
-  hideWinner();
-  // Leave the room and return to setup/home screen
-  try{ leaveLobby(); }catch(e){ showPage('setup'); }
-}
 
 // ── TEAMS RENDER ──────────────────────────────────────
 function renderTeams(){
