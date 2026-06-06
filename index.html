@@ -1655,9 +1655,13 @@ function ensureRoomStructures(room){
 async function touchPresence(){
   if(!G.roomCode || !G.myId) return;
   try{
-    await G.fbUpdate(G.fbRef(G.fbDb, roomPath('presence/'+G.myId)), { lastSeen: Date.now(), online: true });
+    // Update presence AND room lastActivity in parallel
+    await Promise.all([
+      G.fbUpdate(G.fbRef(G.fbDb, roomPath('presence/'+G.myId)), { lastSeen: Date.now(), online: true }),
+      G.fbUpdate(G.fbRef(G.fbDb, 'rooms/'+G.roomCode), { lastActivity: Date.now() })
+    ]);
   } catch(e){
-    console.warn('Presence update failed', e);
+    console.warn('[PRESENCE] Update failed', e);
   }
 }
 
@@ -1666,6 +1670,44 @@ function isManagerOnline(manager){
   const lastSeen = p?.lastSeen || manager.lastSeen || 0;
   return !!lastSeen && Date.now() - lastSeen < 15000;
 }
+
+// ── ROOM LIFECYCLE ────────────────────────────────────
+async function maybeCleanupOldRooms(){
+  if(!requireFirebaseRoomState()) return;
+  console.log('[CLEANUP] Running room cleanup check');
+  const ROOM_TTL = 24 * 60 * 60 * 1000; // 24 hours
+  try{
+    const roomsRef = G.fbRef(G.fbDb, 'rooms');
+    const snap = await G.fbGet(roomsRef);
+    if(!snap.exists()) return;
+    const rooms = snap.val();
+    const now = Date.now();
+    let cleanedCount = 0;
+    
+    for(const code in rooms){
+      const room = rooms[code];
+      const lastActivity = room.lastActivity || room.createdAt || 0;
+      const isInactive = (now - lastActivity) > ROOM_TTL;
+      const isComplete = room.ended || (room.auction?.ended && (!room.managers || room.managers.length === 0));
+      
+      if(isInactive || isComplete){
+        try{
+          await G.fbUpdate(G.fbRef(G.fbDb, 'rooms/'+code), null);
+          cleanedCount++;
+          console.log('[CLEANUP] Deleted room:', code, { reason: isInactive ? 'inactive' : 'complete' });
+        } catch(e){
+          console.warn('[CLEANUP] Failed to delete', code, e);
+        }
+      }
+    }
+    if(cleanedCount > 0) console.log('[CLEANUP] Removed', cleanedCount, 'rooms');
+  } catch(e){
+    console.warn('[CLEANUP] Failed', e);
+  }
+}
+
+// Run cleanup once on app init
+setTimeout(maybeCleanupOldRooms, 5000);
 
 // ── FIREBASE / LOCALSTORAGE ADAPTER ──────────────────
 function firebaseRoomStateReady(){
@@ -1729,6 +1771,10 @@ async function saveRoom(room){
   ensureRoomStructures(room);
   if(!requireFirebaseRoomState()) throw new Error('Firebase is not configured');
   try{
+    // Add lifecycle metadata for cleanup
+    if(!room.createdAt) room.createdAt = Date.now();
+    room.lastActivity = Date.now();
+    
     const payload = {
       code: room.code,
       name: room.name,
@@ -1737,6 +1783,8 @@ async function saveRoom(room){
       settings: room.settings || {},
       started: !!room.started,
       ended: !!room.ended,
+      createdAt: room.createdAt,
+      lastActivity: room.lastActivity,
       auction: room.auction || {},
       players: room.players || [],
       managers: room.managers || [],
@@ -1746,8 +1794,9 @@ async function saveRoom(room){
     };
     if(payload.auction && Array.isArray(payload.auction.log)) payload.auction.log = [];
     await G.fbSet(G.fbRef(G.fbDb, 'rooms/'+room.code), payload);
+    console.log('[ROOM] Saved:', room.code, { createdAt: room.createdAt, lastActivity: room.lastActivity });
   } catch(e){
-    console.warn('Firebase write failed', e);
+    console.warn('[ROOM] Firebase write failed', e);
     toast('Could not save room to Firebase','error');
     throw e;
   }
@@ -1794,7 +1843,8 @@ function subscribeRoom(){
     G.room.players=snap.exists() ? snap.val() : [];
     ensureRoomStructures(G.room);
     if(currentPage==='lobby') renderLobby();
-    else if(currentPage==='auction'){ renderCurrentPlayer(); renderQueueIfChanged(); renderTeamsIfChanged(); }
+    // NOTE: In auction page, don't render here - let listenAuction handle it
+    // This prevents duplicate renders of renderCurrentPlayer and renderQueueIfChanged
     else if(currentPage==='teams') renderTeams();
   });
   listenAuction();
@@ -1951,12 +2001,14 @@ async function createRoom(){
   }
   G.roomCode = code;
 
+  const now = Date.now();
   const room = {
     code, name: rname, hostId: G.myId, hostName: name,
+    createdAt: now, lastActivity: now,
     settings:{ purse, squadSize: squad, timerSeconds: timer },
     managers:[{ id:G.myId, name, purse, squad:[] }],
     players:[],
-    presence:{ [G.myId]:{ lastSeen:Date.now(), online:true } },
+    presence:{ [G.myId]:{ lastSeen:now, online:true } },
     chat:[],
     logs:[],
     auction:{ active:false, currentIdx:0, currentBid:0, currentBidder:'', currentBidderId:'', timerStart:0, timerEndAt:0, log:[] },
@@ -1987,22 +2039,51 @@ async function joinRoom(){
   G.roomCode = code;
   const newId = genId();
   let joinOutcome = null;
+  
   try{
+    // STEP 1: Verify room exists before attempting transaction
+    console.log('[JOIN] Checking if room exists:', code);
+    const existingRoom = await loadRoom(code);
+    if(!existingRoom){
+      console.warn('[JOIN] Room not found in Firebase:', code);
+      toast('Room not found','error');
+      G.roomCode='';
+      return;
+    }
+    console.log('[JOIN] Room found, structure valid:', { code, name: existingRoom.name });
+    
+    // STEP 2: Now attempt to join via transaction
     const result = await transactRoom(room=>{
       const existing = room.managers.find(m=>m.name.toLowerCase()===name.toLowerCase());
       if(existing){
+        console.log('[JOIN] Existing manager found, updating presence');
         room.presence[existing.id]={ lastSeen:Date.now(), online:true };
         return { outcome:{ status:'returning', id:existing.id } };
       }
+      console.log('[JOIN] New manager, adding to room');
       room.managers.push({ id:newId, name, purse: room.settings.purse, squad:[] });
       room.presence[newId]={ lastSeen:Date.now(), online:true };
       return { outcome:{ status:'joined', id:newId } };
     });
-    if(!result.room){ toast('Room not found','error'); G.roomCode=''; return; }
+    
+    if(!result.committed){
+      console.warn('[JOIN] Transaction not committed');
+      toast('Could not join (conflict). Try again.','error');
+      G.roomCode='';
+      return;
+    }
+    if(!result.room){
+      console.warn('[JOIN] Transaction result missing room');
+      toast('Room join failed','error');
+      G.roomCode='';
+      return;
+    }
+    
     G.room = result.room;
     joinOutcome = result.outcome;
+    console.log('[JOIN] Success:', joinOutcome);
   } catch(e){
-    console.warn('Join failed', e);
+    console.error('[JOIN] Exception:', e);
     toast('Could not join room. Try again.','error');
     G.roomCode = '';
     return;
@@ -2302,25 +2383,35 @@ async function updateRetentionPurse(){
 
 async function removeRetention(managerId, playerId){
   try{
+    console.log('[RETENTION] Removing retention:', {managerId, playerId});
     const result=await transactRoom(room=>{
       if(G.myId!==room.hostId) return { outcome:{status:'not-host'} };
       const mgr=room.managers.find(m=>m.id===managerId);
       const player=(room.players||[]).find(p=>p.id===playerId);
-      if(!mgr||!player) return { outcome:{status:'missing'} };
-      mgr.squad=(mgr.squad||[]).filter(p=>!(p.retained && p.playerId===playerId));
+      if(!mgr){
+        console.warn('[RETENTION] Manager not found:', managerId);
+        return { outcome:{status:'missing'} };
+      }
+      if(!player){
+        console.warn('[RETENTION] Player not found:', playerId);
+        return { outcome:{status:'missing'} };
+      }
+      // FIX: Properly filter retained players - match by player id
+      mgr.squad=(mgr.squad||[]).filter(p=>!(p.retained && p.playerId===player.id));
       player.status='pending';
       player.soldTo=''; player.soldToId=''; player.soldPrice=0; player.retained=false;
       if(!mgr.squad.some(p=>p.retained)) mgr.retentionBudget=null;
       recalcManagerPurse(mgr,room);
+      console.log('[RETENTION] Removed successfully:', player.name);
       return { outcome:{status:'ok', playerName:player.name} };
     });
     if(result.room) G.room=result.room;
     const o=result.outcome||{};
     if(o.status==='not-host') toast('Only host can remove retentions','error');
-    else if(o.status==='missing') toast('Retention not found','error');
+    else if(o.status==='missing') toast('Manager or player not found','error');
     else if(o.status==='ok'){ renderLobby(); toast(o.playerName+' returned to pool','info'); }
   } catch(e){
-    console.warn('Remove retention failed', e);
+    console.warn('[RETENTION] Failed:', e);
     toast('Could not remove retention. Try again.','error');
   }
 }
@@ -3154,62 +3245,82 @@ async function closeAndAdvanceAuction(action, reason='unsold', expected=null){
   if(G.advanceLock) return;
   G.advanceLock=true;
   try{
-    const result=await transactRoom(room=>{
-      const a=room.auction;
-      if(!a||!a.active) return { outcome:{status:'inactive'} };
-      if(expected && (a.turnId!==expected.turnId || a.currentIdx!==expected.currentIdx || (expected.timerEndAt && a.timerEndAt!==expected.timerEndAt))){
-        return { outcome:{status:'stale'} };
+    // FIX: Split into two operations: update auction only, then manage room state
+    if(!G.room) return;
+    const a = G.room.auction;
+    if(!a||!a.active) return;
+    if(expected && (a.turnId!==expected.turnId || a.currentIdx!==expected.currentIdx || (expected.timerEndAt && a.timerEndAt!==expected.timerEndAt))){
+      return;
+    }
+    
+    if(action==='auto') action = a.currentBidder ? 'sold' : 'unsold';
+    const cp=G.room.players[a.currentIdx];
+    if(!cp || !['pending','queued_unsold'].includes(cp.status)) return;
+    
+    if(action==='sold'){
+      if(!a.currentBidderId || !a.currentBidder) {toast('No bids yet!','error');return;}
+      const mgr=G.room.managers.find(m=>m.id===a.currentBidderId);
+      if(!mgr) {toast('Winning team not found','error');return;}
+      if(!Array.isArray(mgr.squad)) mgr.squad=[];
+      const squadSize=Number(G.room.settings?.squadSize)||15;
+      if(mgr.squad.length>=squadSize) {toast(mgr.name+' already has '+squadSize+' players','error');return;}
+      if((mgr.squad||[]).some(p=>p.playerId===cp.id || (!p.playerId && p.name===cp.name))){
+        return;
       }
-      if(action==='auto') action = a.currentBidder ? 'sold' : 'unsold';
-      const cp=room.players[a.currentIdx];
-      if(!cp || !['pending','queued_unsold'].includes(cp.status)) return { outcome:{status:'closed'} };
-      if(action==='sold'){
-        if(!a.currentBidderId || !a.currentBidder) return { outcome:{status:'no-bid'} };
-        const mgr=room.managers.find(m=>m.id===a.currentBidderId);
-        if(!mgr) return { outcome:{status:'missing-manager'} };
-        if(!Array.isArray(mgr.squad)) mgr.squad=[];
-        const squadSize=Number(room.settings?.squadSize)||15;
-        if(mgr.squad.length>=squadSize) return { outcome:{status:'squad-full', managerName:mgr.name, squadSize} };
-        if((mgr.squad||[]).some(p=>p.playerId===cp.id || (!p.playerId && p.name===cp.name))){
-          return { outcome:{status:'duplicate'} };
-        }
-        if(a.currentBid>mgr.purse) return { outcome:{status:'purse', managerName:mgr.name} };
-        const buyer=a.currentBidder;
-        const price=a.currentBid;
-        cp.status='sold';
-        cp.soldTo=buyer;
-        cp.soldToId=a.currentBidderId;
-        cp.soldPrice=price;
-        mgr.purse=normalizeAmount(mgr.purse-price);
-        mgr.squad.push({playerId:cp.id,name:cp.name,role:cp.role,nation:cp.nation,price});
-        room.logs.push({type:'sold',text:'SOLD! '+cp.name+' -> '+buyer+' @ '+formatMoney(price),createdAt:Date.now()});
+      if(a.currentBid>mgr.purse) {toast(mgr.name+' does not have enough purse','error');return;}
+      const buyer=a.currentBidder;
+      const price=a.currentBid;
+      
+      // Use room transaction to update player and manager
+      const result=await transactRoom(room=>{
+        const roomCp=room.players[a.currentIdx];
+        const roomMgr=room.managers.find(m=>m.id===a.currentBidderId);
+        if(!roomCp || !roomMgr) return { outcome:{status:'missing'} };
+        
+        roomCp.status='sold';
+        roomCp.soldTo=buyer;
+        roomCp.soldToId=a.currentBidderId;
+        roomCp.soldPrice=price;
+        roomMgr.purse=normalizeAmount(roomMgr.purse-price);
+        roomMgr.squad.push({playerId:roomCp.id,name:roomCp.name,role:roomCp.role,nation:roomCp.nation,price});
+        room.logs.push({type:'sold',text:'SOLD! '+roomCp.name+' -> '+buyer+' @ '+formatMoney(price),createdAt:Date.now()});
         const advance=advanceAuctionState(room);
-        return { outcome:{status:'sold', playerName:cp.name, buyer, price, complete:advance.complete} };
+        return { outcome:{status:'sold', playerName:roomCp.name, buyer, price, complete:advance.complete} };
+      });
+      if(result.room) G.room=result.room;
+      const o=result.outcome||{};
+      if(o.status==='sold') {
+        toast(o.playerName+' sold to '+o.buyer+' for '+formatMoney(o.price),'success');
+        if(o.complete) showWinner(G.room);
       }
+    } else {
+      // Handle unsold
       const finalUnsold = a.unsoldRound || cp.status==='queued_unsold';
-      cp.status=finalUnsold ? 'unsold' : 'queued_unsold';
-      if(finalUnsold){
-        room.logs.push({type:'unsold',text:'Unsold: '+cp.name,createdAt:Date.now()});
-      } else {
-        const label = reason==='skip' ? 'Skipped' : 'Unsold';
-        room.logs.push({type:'unsold',text:label+': '+cp.name+' moved to UNSOLD',createdAt:Date.now()});
+      const result=await transactRoom(room=>{
+        const roomCp=room.players[a.currentIdx];
+        if(!roomCp) return { outcome:{status:'missing'} };
+        
+        roomCp.status=finalUnsold ? 'unsold' : 'queued_unsold';
+        if(finalUnsold){
+          room.logs.push({type:'unsold',text:'Unsold: '+roomCp.name,createdAt:Date.now()});
+        } else {
+          const label = reason==='skip' ? 'Skipped' : 'Unsold';
+          room.logs.push({type:'unsold',text:label+': '+roomCp.name+' moved to UNSOLD',createdAt:Date.now()});
+        }
+        const advance=advanceAuctionState(room);
+        return { outcome:{status:'unsold', playerName:roomCp.name, finalUnsold, complete:advance.complete} };
+      });
+      if(result.room) G.room=result.room;
+      const o=result.outcome||{};
+      if(o.status==='unsold') {
+        toast(o.finalUnsold ? o.playerName+' unsold' : o.playerName+' moved to UNSOLD','info');
+        if(o.complete) showWinner(G.room);
       }
-      const advance=advanceAuctionState(room);
-      return { outcome:{status:'unsold', playerName:cp.name, finalUnsold, complete:advance.complete} };
-    });
-    if(result.room) G.room=result.room;
+    }
+    
     if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
     lastAuctionRenderKey='';
-    const o=result.outcome||{};
-    if(o.status==='inactive' || o.status==='closed' || o.status==='stale') return;
-    if(o.status==='no-bid'){toast('No bids yet!','error');return;}
-    if(o.status==='missing-manager'){toast('Winning team not found','error');return;}
-    if(o.status==='squad-full'){toast(o.managerName+' already has '+o.squadSize+' players','error');return;}
-    if(o.status==='purse'){toast(o.managerName+' does not have enough purse','error');return;}
-    if(o.status==='sold') toast(o.playerName+' sold to '+o.buyer+' for '+formatMoney(o.price),'success');
-    else if(o.status==='unsold') toast(o.finalUnsold ? o.playerName+' unsold' : o.playerName+' moved to UNSOLD','info');
-    if(o.complete) showWinner(G.room);
-    else renderAuction();
+    renderAuction();
   } catch(e){
     console.warn('Close and advance failed', e);
     toast('Could not move to the next player. Try again.','error');
