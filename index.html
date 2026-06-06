@@ -1794,25 +1794,59 @@ async function transactRoom(updateFn){
     }
     console.log('[TRANSACT] path =', path);
 
+    let _attempts = 0;
     const result = await G.fbRunTransaction(G.fbRef(G.fbDb, path), current=>{
+      _attempts++;
+      console.debug('[TRANSACT] attempt#', _attempts, 'current:', current);
       // Firebase RTDB sends null on first call for large nodes — this is normal.
       // Return undefined to abort so Firebase retries with the real server value.
       // NEVER seed from preValue: writing stale local data causes sync corruption.
       if(current === null || current === undefined){
-        outcome = { status:'null-retry' };
+        outcome = { status:'null-retry', attempt:_attempts };
+        console.debug('[TRANSACT] current null/undefined -> aborting this attempt (will retry with server value)', { attempt:_attempts });
         return; // undefined = abort & retry with real value
       }
-      ensureRoomStructures(current);
-      const next = updateFn(current);
+      try{
+        ensureRoomStructures(current);
+      } catch(er){
+        console.warn('[TRANSACT] ensureRoomStructures threw', er);
+      }
+      let next;
+      try{
+        next = updateFn(current);
+      } catch(udErr){
+        console.error('[TRANSACT] updateFn threw on attempt', _attempts, udErr);
+        outcome = { status:'updateFn-threw', err: (udErr && udErr.message) || udErr };
+        return; // abort this attempt
+      }
+      console.debug('[TRANSACT] attempt#', _attempts, 'updateFn returned:', next);
+      // Support two updateFn patterns:
+      // 1) mutate `current` in-place and return a truthy value (legacy callers)
+      // 2) return an explicit `{ room: <newRoom>, outcome: {...} }` object
+      if(next && typeof next === 'object' && next.room !== undefined){
+        outcome = next.outcome || { status:'ok', attempt:_attempts };
+        console.debug('[TRANSACT] attempt#', _attempts, 'updateFn returned explicit room object - writing that');
+        return next.room;
+      }
       if(!next){
-        if(!outcome.status || outcome.status==='empty') outcome = { status:'aborted' };
+        if(!outcome.status || outcome.status==='empty') outcome = { status:'aborted', attempt:_attempts };
+        console.debug('[TRANSACT] attempt#', _attempts, 'updateFn returned falsy -> aborting (no write)');
         return;
       }
-      outcome = next.outcome || { status:'ok' };
+      outcome = next.outcome || { status:'ok', attempt:_attempts };
+      console.debug('[TRANSACT] attempt#', _attempts, 'returning mutated current object for write');
       return current;
     }, { applyLocally: false });
-    console.log('[TRANSACT] Result:', { committed: result.committed, outcome });
-    return { committed:result.committed, room:result.snapshot.exists() ? ensureRoomStructures(result.snapshot.val()) : null, outcome };
+    console.log('[TRANSACT] Result:', { committed: result.committed, attempts: _attempts, outcome });
+    try{
+      const snapExists = result.snapshot && typeof result.snapshot.exists === 'function' ? result.snapshot.exists() : !!result.snapshot;
+      const snapVal = snapExists ? (result.snapshot.val ? result.snapshot.val() : result.snapshot) : null;
+      console.log('[TRANSACT] snapshot.exists():', snapExists);
+      console.log('[TRANSACT] snapshot.val():', snapVal);
+    } catch(snapErr){
+      console.warn('[TRANSACT] Could not read result.snapshot', snapErr);
+    }
+    return { committed:result.committed, room:result.snapshot && result.snapshot.exists ? ensureRoomStructures(result.snapshot.val()) : null, outcome };
   } catch(e){
     console.error('[TRANSACT] Error:', e && e.message, e);
     throw e;
