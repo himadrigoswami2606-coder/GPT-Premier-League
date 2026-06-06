@@ -648,72 +648,156 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .host-ctrl-btn.btn-amber:hover{background:#180b0c;border-color:#7a2e33;color:#ff6969}
 
 @media(max-width:700px){
-  #topnav{
-    height:54px;
-    padding:0 10px;
-    overflow:hidden;
-  }
+  /* ── Nav ── */
+  #topnav{height:54px;padding:0 10px;overflow:hidden}
   .nav-logo{gap:7px;font-size:1rem;line-height:1}
   .nav-logo-icon{width:34px;height:34px;flex:0 0 34px}
-  .nav-user{
-    max-width:calc(100vw - 154px);
-    height:38px;
-    padding:4px 5px 4px 8px;
-    gap:7px;
-  }
+  .nav-user{max-width:calc(100vw - 154px);height:38px;padding:4px 5px 4px 8px;gap:7px}
   .nav-user-pic{width:28px;height:28px}
   .nav-user-name{font-size:.74rem}
   .nav-user .btn{padding:7px 10px;font-size:.72rem}
-  #page-auction{padding-bottom:96px;overflow-x:hidden}
+
+  /* ── Auction page shell ── */
+  #page-auction{
+    background:#060607;
+    padding-bottom:calc(130px + env(safe-area-inset-bottom));
+    overflow-x:hidden;
+  }
+
+  /* ── Hide main nav + replace with auction topbar on mobile ── */
+  #page-auction ~ * #topnav{display:none}
   #page-auction .auction-topbar{
-    position:sticky;
-    top:54px;
-    height:auto;
-    min-height:54px;
-    padding:8px 12px;
-    align-items:flex-start;
-    gap:8px;
+    position:fixed;
+    top:0;
+    left:0;right:0;
+    z-index:200;
+    height:48px;
+    padding:0 14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    background:#0e0e10;
+    border-bottom:1px solid #242424;
+    gap:6px;
+  }
+  #page-auction .auction-wrap{
+    padding-top:48px;
   }
   #page-auction .auction-topbar>div:last-child{
-    width:100%;
-    justify-content:space-between;
+    display:flex;
+    align-items:center;
     gap:8px;
+    font-size:.76rem;
+  }
+  #page-auction .auction-topbar .btn{
+    padding:4px 10px;
     font-size:.72rem;
+    height:28px;
   }
-  #page-auction .auction-topbar .btn{padding:5px 8px;font-size:.7rem}
-  #page-auction .host-bar.hidden + .auction-main-grid,
-  #page-auction .host-bar:not(.hidden) + .auction-main-grid{
-    margin-top:0;
+  /* Purse pill in top bar */
+  #mob-purse-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:0;
+    background:#1a1a1c;
+    border:1px solid #2e2e32;
+    border-radius:999px;
+    padding:0;
+    height:32px;
+    overflow:hidden;
+    font-size:.78rem;
+    font-weight:800;
   }
+  #mob-purse-pill .pp-amount{
+    padding:0 10px;
+    color:#f1d24f;
+  }
+  #mob-purse-pill .pp-slots{
+    padding:0 10px;
+    color:#6b7280;
+    border-left:1px solid #2e2e32;
+  }
+  /* Team avatar in top bar */
+  #mob-team-avatar{
+    width:32px;height:32px;
+    border-radius:50%;
+    background:#1e1e22;
+    border:1px solid #3a3a40;
+    color:#e4e4e8;
+    font-weight:900;
+    font-size:.82rem;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+  }
+
+  /* ── Single-column layout ── */
   #page-auction .auction-main-grid{
     grid-template-columns:minmax(0,1fr);
     min-height:0;
+    gap:0;
   }
   #page-auction .auction-main-grid>div:first-child{
     width:auto;
     max-width:none;
-    margin:12px 10px 0;
+    margin:10px 10px 0;
     justify-self:stretch;
   }
+  /* Hide sidebar entirely on mobile — teams shown via button */
   #page-auction .auction-main-grid>div:last-child{
-    border-left:0;
-    border-top:1px solid #242424;
-    min-height:0;
-    padding:12px 10px 148px;
-    background:#050607;
+    display:none;
   }
-  /* Player card: match desktop layout exactly */
+
+  /* ── Host bar ── */
+  #page-auction .host-bar{
+    top:98px;
+    height:auto;
+    padding:6px 10px;
+    overflow-x:auto;
+    background:#111113;
+  }
+  .host-bar-btns{justify-content:flex-start;min-width:max-content;gap:6px}
+  .host-ctrl-btn{padding:6px 11px;font-size:.72rem}
+
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     PLAYER CARD  (matches 11auction)
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  .block-card{background:transparent;border:none;overflow:visible}
+  .block-card::before{display:none}
+  .block-inner{padding:0}
+
+  /* Card background: dark with subtle warm tint */
   .block-header{
     display:flex;
     align-items:center;
     gap:14px;
     min-height:0;
-    padding:14px 14px 16px;
+    padding:16px 16px 18px;
     margin-bottom:10px;
+    background:#111110;
+    border:1px solid #2a2718;
+    border-left:3px solid #888;
+    border-radius:10px;
   }
-  .mobile-player-name{
-    display:none!important;
+
+  /* Hide old mobile name element */
+  .mobile-player-name{display:none!important}
+
+  /* Avatar: circle, grey, initials */
+  .player-big-avatar{
+    width:62px;
+    height:62px;
+    flex:0 0 62px;
+    font-size:1.15rem;
+    background:#1c1c1c;
+    border:2px solid #444;
+    color:#aaa;
+    font-weight:900;
   }
+  .player-big-avatar .role-ring{display:none}
+
+  /* Info column */
   .player-showcase{
     display:flex;
     align-items:center;
@@ -722,136 +806,281 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     min-width:0;
     margin:0;
   }
-  .player-big-avatar{
-    width:60px;
-    height:60px;
-    flex:0 0 60px;
-    font-size:1.1rem;
-  }
-  .player-showcase-info{
-    min-width:0;
-    flex:1;
-  }
+  .player-showcase-info{min-width:0;flex:1}
+
+  /* Player name — large bold white */
   .player-showcase-name{
     display:block!important;
     font-family:Arial,Helvetica,sans-serif;
     font-weight:900;
-    font-size:1.2rem;
+    font-size:1.28rem;
     color:#fff;
     line-height:1.2;
-    margin-bottom:7px;
+    margin-bottom:8px;
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
     max-width:100%;
   }
+
+  /* Tags row: role chip + dot + nation */
   .player-tags{
-    display:grid;
-    gap:5px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px 0;
+    align-items:center;
     width:100%;
   }
-  .player-tags .base-line{font-size:.66rem}
-  .bid-panel{min-height:0;padding:14px;margin-bottom:12px}
-  .current-bid-num{font-size:2.15rem;line-height:1.05}
-  .timer-row{margin-top:14px}
-  .timer-num{font-size:2.2rem;margin-bottom:10px}
-  .side-purse-card{
-    display:grid;
-    grid-template-columns:1fr auto;
-    align-items:end;
-    gap:2px 12px;
-    padding:0 0 10px;
+  .player-tags .badge{
+    display:inline-flex;
+    background:transparent;
+    border:0;
+    padding:0;
+    font-size:.78rem;
+    color:#a0aab4;
+    text-transform:none;
+    letter-spacing:0;
+  }
+  .player-tags .role-chip{
+    display:inline-flex;
+    background:#1e3a8a;
+    color:#93c5fd;
+    border-radius:5px;
+    padding:3px 10px;
+    font-weight:900;
+    font-size:.72rem;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    margin-right:8px;
+  }
+  .player-tags .role-chip[data-role="BAT"]{background:#7c2d12;color:#fdba74}
+  .player-tags .role-chip[data-role="BOWL"]{background:#14532d;color:#86efac}
+  .player-tags .role-chip[data-role="ALL"]{background:#1e3a8a;color:#93c5fd}
+  .player-tags .role-chip[data-role="WK"]{background:#4a1d96;color:#c4b5fd}
+  .player-tags .nation-dot{
+    display:inline-block;
+    width:7px;height:7px;
+    background:#6b7280;
+    border-radius:50%;
+    margin:0 6px;
+  }
+  .player-tags .base-line{
+    display:block;
+    width:100%;
+    border-top:1px solid #2a2718;
+    margin-top:10px;
+    padding-top:10px;
+    color:#6b7280;
+    font-size:.73rem;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+  }
+  .player-tags .base-line b{color:#f1d24f;margin-left:6px}
+
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     BID PANEL  (matches 11auction)
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  .bid-panel{
+    min-height:0;
+    padding:16px 16px 18px;
+    margin-bottom:0;
+    background:#111110;
+    border:1px solid #2a2718;
+    border-radius:10px;
+    text-align:left;
+    position:relative;
+  }
+  /* "• CURRENT BID" label stays top-left; base price top-right */
+  .bid-panel-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    margin-bottom:4px;
+  }
+  .bid-panel-top>div:first-child{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+  }
+  .bid-panel-top>div:last-child{
+    display:block!important;
+    text-align:right;
+    margin-bottom:0!important;
+  }
+  .bid-label-sm{
+    font-size:.72rem;
+    color:#6b7280;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+  }
+  .bid-label-sm::before{content:'• ';color:#f2d34a}
+  /* Big bid number */
+  .current-bid-num{
+    font-family:Arial,Helvetica,sans-serif;
+    font-size:3rem;
+    font-weight:900;
+    color:#fff;
+    line-height:1;
+    margin:6px 0 10px;
+    text-shadow:none;
+  }
+  /* Leading state: yellow bid number */
+  .bid-panel.leading .current-bid-num{color:#f1d24f}
+  /* Bid leader / status text */
+  .bid-leader{
+    font-size:.82rem;
+    color:#6b7280;
+    margin-bottom:0;
+  }
+  /* "You are leading!" pill */
+  #mob-leading-pill{
+    display:none;
+    align-items:center;
+    gap:6px;
+    background:rgba(22,163,74,.18);
+    border:1px solid rgba(22,163,74,.35);
+    border-radius:999px;
+    padding:7px 18px;
+    color:#4ade80;
+    font-weight:800;
+    font-size:.88rem;
+    margin-top:8px;
+  }
+  #mob-leading-pill.show{display:inline-flex}
+  #mob-leading-pill::before{
+    content:'';
+    width:8px;height:8px;
+    border-radius:50%;
+    background:#22c55e;
+    flex-shrink:0;
+  }
+
+  /* ── Timer: outside bid panel, big centered ── */
+  .timer-row{
+    margin:18px 0 14px;
+    text-align:center;
+  }
+  .timer-num{
+    display:block;
+    font-size:2.8rem;
+    font-weight:900;
+    color:#fff;
+    line-height:1;
+    margin-bottom:10px;
+    text-align:center;
+    text-shadow:none;
+  }
+  .timer-track{height:4px;border-radius:999px;background:#1e1e1e}
+  .timer-fill{border-radius:999px}
+
+  /* ── Latest bid log row (single entry, 11auction style) ── */
+  #mob-latest-log{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:#111110;
+    border:1px solid #2a2718;
+    border-radius:8px;
+    padding:10px 14px;
+    margin-bottom:10px;
+    font-size:.82rem;
+    color:#c9b96e;
+    font-weight:700;
+    min-height:40px;
+  }
+  #mob-latest-log::before{
+    content:'•';
+    color:#f1d24f;
+    font-size:1rem;
+    flex-shrink:0;
+  }
+  #mob-latest-log:empty{display:none}
+
+  /* ── "View Teams" button row ── */
+  #mob-view-teams-row{
+    display:flex;
+    gap:8px;
     margin-bottom:10px;
   }
-  .side-purse-label,.side-purse-slots{grid-column:1}
-  .side-purse-value{grid-column:2;grid-row:1 / span 2;font-size:1.05rem;text-align:right}
-  #page-auction .sidebar-card{margin-bottom:10px}
-  #page-auction .s-section-title{padding:10px 12px 7px;font-size:.7rem}
-  .team-purse-item{min-height:54px;padding:9px 12px}
-  .tpi-name{font-size:.82rem}
-  .tpi-purse{font-size:.78rem}
+  #mob-view-teams-btn{
+    flex:1;
+    height:48px;
+    border-radius:10px;
+    background:#1a1912;
+    border:1px solid #3a3412;
+    color:#f1d24f;
+    font-weight:800;
+    font-size:.92rem;
+    cursor:pointer;
+  }
+  #mob-view-teams-btn:active{background:#242110}
+  #mob-chat-btn-row{
+    width:80px;
+    height:48px;
+    border-radius:10px;
+    background:#1a1912;
+    border:1px solid #3a3412;
+    color:#f1d24f;
+    font-weight:800;
+    font-size:.82rem;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:5px;
+  }
+
+  /* ── Fixed bottom bid buttons (11auction style) ── */
   .bid-quick-grid{
-    left:10px;
-    right:10px;
-    bottom:calc(58px + env(safe-area-inset-bottom));
-    grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:8px;
+    position:fixed;
+    left:0;right:0;
+    bottom:0;
     z-index:490;
+    display:grid;
+    grid-template-columns:repeat(3,1fr) auto;
+    gap:0;
+    margin:0;
+    background:#0c0c0a;
+    border-top:1px solid #2a2718;
+    padding:10px 10px calc(10px + env(safe-area-inset-bottom));
+    gap:8px;
   }
   .bid-q-btn{
-    height:48px;
-    min-width:0;
+    height:52px;
     border-radius:10px;
-    font-size:.9rem;
+    background:#f1d24f;
+    border:1px solid #f7dc68;
+    color:#080808;
+    font-size:.88rem;
+    font-weight:900;
+    min-width:0;
   }
-  .custom-bid-row{
-    display:none;
-  }
-  .custom-bid-row .input{
-    display:none;
-  }
-  #btn-bid{
-    display:none!important;
-  }
-  .my-purse-note{
-    left:10px;
-    right:10px;
-    bottom:calc(30px + env(safe-area-inset-bottom));
-    font-size:.7rem;
-  }
-  .mobile-current-player{
-    display:block;
-    position:fixed;
-    left:10px;
-    right:10px;
-    bottom:calc(10px + env(safe-area-inset-bottom));
-    z-index:489;
-    text-align:center;
-    color:#c9bf72;
-    font-size:.72rem;
+  .bid-q-btn:active{transform:scale(.97)}
+
+  /* Withdraw / Skip button injected by JS as 4th button */
+  .bid-withdraw-btn{
+    height:52px;
+    width:80px;
+    border-radius:10px;
+    background:transparent;
+    border:1px solid #3a1f1f;
+    color:#ef4444;
+    font-size:.8rem;
     font-weight:800;
-    line-height:1.2;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    pointer-events:none;
+    cursor:pointer;
+    flex-shrink:0;
   }
-  .auction-chat-pill{
-    right:12px;
-    bottom:calc(112px + env(safe-area-inset-bottom));
-    height:34px;
-  }
-  .host-bar{
-    top:108px;
-    height:auto;
-    padding:8px 10px;
-    overflow-x:auto;
-  }
-  .host-bar-btns{
-    justify-content:flex-start;
-    min-width:max-content;
-  }
+
+  /* Hide old floating elements */
+  .custom-bid-row{display:none!important}
+  #btn-bid{display:none!important}
+  .my-purse-note{display:none!important}
+  .mobile-current-player{display:none!important}
+  .auction-chat-pill{display:none!important}
 }
 
 @media(max-width:767px){
-  :root{
-    --mobile-fixed-bid-space: calc(210px + env(safe-area-inset-bottom));
-  }
-  #page-auction{
-    padding-bottom:var(--mobile-fixed-bid-space);
-  }
-  #page-auction .auction-wrap{
-    padding-bottom:var(--mobile-fixed-bid-space);
-  }
-  #page-auction .auction-main-grid{
-    padding-bottom:var(--mobile-fixed-bid-space);
-  }
-  #page-auction .auction-main-grid>div:first-child{
-    margin-bottom:var(--mobile-fixed-bid-space);
-  }
-  #page-auction .auction-main-grid>div:last-child{
-    padding-bottom:var(--mobile-fixed-bid-space);
-  }
+  /* Ensure nothing clips the player card on small screens */
   #page-auction .block-card,
   #page-auction .block-inner,
   #page-auction .block-header{
@@ -859,7 +1088,6 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     max-height:none!important;
     height:auto!important;
   }
-  /* mobile-player-name no longer used on mobile */
 }
 </style>
 </head>
@@ -1070,11 +1298,19 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
       <div class="live-pill">
         <span class="live-dot"></span>
         <span id="auction-room-label">Live Auction</span>
+        <!-- desktop only: remaining & category -->
+        <span class="small dimmed" style="margin-left:10px">Left: <b id="players-remaining" style="color:var(--t1)">0</b></span>
+        <span class="small top-status" style="margin-left:4px">Category: <b id="category-status" class="category-status">-</b></span>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <span class="small dimmed">Left: <b id="players-remaining" style="color:var(--t1)">0</b></span>
-        <span class="small top-status">Category: <b id="category-status" class="category-status">-</b></span>
-        <button class="btn btn-ghost btn-sm" onclick="showPage('teams')">👥 Teams</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <!-- mobile: purse pill + team avatar -->
+        <div id="mob-purse-pill">
+          <span class="pp-amount" id="mob-purse-amount">100Cr</span>
+          <span class="pp-slots" id="mob-purse-slots">0/15</span>
+        </div>
+        <div id="mob-team-avatar" onclick="showPage('teams')" title="View Teams">H</div>
+        <!-- desktop: teams button -->
+        <button class="btn btn-ghost btn-sm" onclick="showPage('teams')" style="display:none" id="btn-teams-top">👥 Teams</button>
       </div>
     </div>
 
@@ -1134,8 +1370,22 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
               <span class="timer-num" id="timer-display">30s</span>
               <div class="timer-track"><div class="timer-fill" id="timer-fill" style="width:100%"></div></div>
             </div>
+            <!-- mobile: leading pill -->
+            <div id="mob-leading-pill">You are leading!</div>
           </div>
 
+          <!-- mobile: timer lives here on mobile (always rendered) -->
+
+          <!-- mobile: latest bid log row -->
+          <div id="mob-latest-log"></div>
+
+          <!-- mobile: view teams + chat row -->
+          <div id="mob-view-teams-row">
+            <button id="mob-view-teams-btn" onclick="showPage('teams')">👥 View Teams</button>
+            <button id="mob-chat-btn-row" onclick="focusAuctionChat()">💬 Chat</button>
+          </div>
+
+          <!-- bid buttons grid (desktop: fixed; mobile: fixed bottom strip) -->
           <div class="bid-quick-grid" id="quick-bids"></div>
           <div class="custom-bid-row">
             <input class="input" type="number" id="custom-bid" placeholder="Custom bid (e.g. 0.25 or 1.5)" step="0.25" min="0.25"/>
@@ -1942,6 +2192,11 @@ function showPage(name){
   const bnav = document.getElementById('bottom-nav');
   const inAuction = ['auction','teams'].includes(name);
   bnav.classList.toggle('show', inAuction);
+  // On mobile, hide topnav when in auction (auction has its own topbar)
+  const topnav = document.getElementById('topnav');
+  if(topnav && window.innerWidth<=700){
+    topnav.style.display = name==='auction' ? 'none' : '';
+  }
   // Bottom nav active state
   ['auction','teams'].forEach(p=>{
     const bn = document.getElementById('bn-'+p);
@@ -2777,6 +3032,12 @@ function renderAuction(){
   // Role ring color
   const ringColors={BAT:'var(--amber)',BOWL:'var(--red)',ALL:'var(--blue)',WK:'var(--purple)'};
   document.getElementById('role-ring').style.borderColor=ringColors[cp.role]||'var(--bd2)';
+  // Mobile: set block-header border-left color + avatar border by role
+  const roleHex={BAT:'#fdba74',BOWL:'#86efac',ALL:'#93c5fd',WK:'#c4b5fd'};
+  const bh=document.querySelector('.block-header');
+  if(bh) bh.style.borderLeftColor=roleHex[cp.role]||'#555';
+  const av=document.getElementById('block-avatar-div');
+  if(av) av.style.borderColor=roleHex[cp.role]||'#555';
 
   document.getElementById('current-bid-display').textContent=formatMoney(a.currentBid);
   document.getElementById('base-price-display').textContent=formatMoney(cp.base);
@@ -2980,8 +3241,8 @@ function renderCurrentPlayer(){
   const mobileCurrentPlayer=document.getElementById('mobile-current-player');
   if(mobileCurrentPlayer) mobileCurrentPlayer.textContent='Now: '+cp.name;
   document.getElementById('block-player-tags').innerHTML=`
-    <span class="badge"><span class="role-chip">${escapeHTML(cp.role)}</span><span class="nation-dot"></span>${escapeHTML(cp.nation)}</span>
-    <span class="base-line">Base Price <b>${formatMoney(cp.base)}</b></span>
+    <span class="badge"><span class="role-chip" data-role="${escapeHTML(cp.role)}">${escapeHTML(cp.role)}</span><span class="nation-dot"></span>${escapeHTML(cp.nation)}</span>
+    <span class="base-line">BASE PRICE <b>${formatMoney(cp.base)}</b></span>
   `;
   const ringColors={BAT:'var(--amber)',BOWL:'var(--red)',ALL:'var(--blue)',WK:'var(--purple)'};
   document.getElementById('role-ring').style.borderColor=ringColors[cp.role]||'var(--bd2)';
@@ -2997,7 +3258,34 @@ function renderBidState(){
   const bidDisplay=document.getElementById('current-bid-display');
   if(bidDisplay) bidDisplay.textContent=formatMoney(a.currentBid);
   const leader=document.getElementById('bid-leader-display');
-  if(leader) leader.textContent=a.currentBidder?('🏅 '+a.currentBidder):('No bids yet — opens at '+formatMoney(cp.base));
+  const iAmLeading = !!(a.currentBidderId && a.currentBidderId===G.myId);
+  // Mobile: swap label between BASE PRICE / CURRENT BID
+  const bidLabel=document.querySelector('.bid-panel .bid-label-sm');
+  const isMob=window.innerWidth<=700;
+  if(bidLabel && isMob) bidLabel.textContent=a.currentBidder ? 'Current Bid' : 'Base Price';
+  if(leader){
+    if(isMob){
+      leader.textContent=iAmLeading ? '' : (a.currentBidder ? 'No bids yet — be the first!' : 'No bids yet — be the first!');
+      leader.textContent=a.currentBidder ? (iAmLeading ? '' : '🏅 '+a.currentBidder) : 'No bids yet — be the first!';
+    } else {
+      leader.textContent=a.currentBidder?('🏅 '+a.currentBidder):('No bids yet — opens at '+formatMoney(cp.base));
+    }
+  }
+
+  // Mobile: "You are leading!" pill + yellow bid number
+  const bidPanel=document.querySelector('.bid-panel');
+  if(bidPanel) bidPanel.classList.toggle('leading', iAmLeading);
+  const leadPill=document.getElementById('mob-leading-pill');
+  if(leadPill) leadPill.classList.toggle('show', iAmLeading);
+
+  // Mobile: latest bid log row
+  const mobLog=document.getElementById('mob-latest-log');
+  if(mobLog){
+    const logs=[...(room.logs||a.log||[])];
+    const latestBid=logs.slice().reverse().find(l=>l.type==='bid'||l.type==='info');
+    mobLog.textContent=latestBid ? latestBid.text : '';
+  }
+
   const myM=room.managers.find(m=>m.id===G.myId);
   const squadSize=Number(room.settings?.squadSize)||15;
   const squadCount=myM && Array.isArray(myM.squad) ? myM.squad.length : 0;
@@ -3012,9 +3300,22 @@ function renderBidState(){
     : [];
   const quickBids=document.getElementById('quick-bids');
   if(quickBids){
-    quickBids.innerHTML=bidOptions.length
-      ? bidOptions.map(opt=>`<button class="bid-q-btn" onclick="doBid(${opt.amount},this)">${opt.label}</button>`).join('')
-      : `<div class="bid-empty">${squadFull?'Squad limit reached':myM?'Budget limit reached':'Join as a manager to bid'}</div>`;
+    // On mobile: show bid buttons + a Withdraw/Skip button as 4th slot
+    const isMobile=window.innerWidth<=700;
+    let btnsHtml='';
+    if(bidOptions.length){
+      btnsHtml=bidOptions.map(opt=>`<button class="bid-q-btn" onclick="doBid(${opt.amount},this)">${opt.label}</button>`).join('');
+    } else {
+      btnsHtml=`<div class="bid-empty">${squadFull?'Squad limit reached':myM?'Budget limit reached':'Join as a manager to bid'}</div>`;
+    }
+    if(isMobile){
+      if(iAmLeading && a.currentBidder){
+        btnsHtml+=`<button class="bid-withdraw-btn" onclick="doBid('withdraw')">Withdraw</button>`;
+      } else if(G.isHost){
+        btnsHtml+=`<button class="bid-withdraw-btn" onclick="hostNext()">Skip</button>`;
+      }
+    }
+    quickBids.innerHTML=btnsHtml;
   }
   document.querySelectorAll('.bid-q-btn').forEach(btn=>btn.disabled=!!a.paused || !!G.bidLock);
   const customBidInput=document.getElementById('custom-bid');
