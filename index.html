@@ -12,7 +12,7 @@
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, get, update, onValue, push, serverTimestamp }
+import { getDatabase, ref, set, get, update, onValue, push, serverTimestamp, runTransaction }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ─── PASTE YOUR FIREBASE CONFIG HERE ───────────────────────────
@@ -41,7 +41,7 @@ try {
 }
 
 // Expose to window so non-module scripts can call
-window._fb = { db, ref, set, get, update, onValue, push, serverTimestamp, firebaseReady };
+window._fb = { db, ref, set, get, update, onValue, push, serverTimestamp, runTransaction, firebaseReady };
 </script>
 
 <style>
@@ -1344,7 +1344,7 @@ let G = {
   myId: '', myName: '', isHost: false,
   room: null, roomCode: '',
   fbReady: false, fbDb: null, fbRef: null, fbGet: null, fbSet: null,
-  fbUpdate: null, fbOnValue: null, fbListener: null,
+  fbUpdate: null, fbOnValue: null, fbRunTransaction: null, fbListener: null,
   authUser: null, pendingAction: '',
   googleReady: false, googlePromptRendered: false,
   hostLobbyOverride: false,
@@ -1352,6 +1352,7 @@ let G = {
   soldLock: false,
   bidLock: false,
   advanceLock: false,
+  autoCloseLock: false,
 };
 
 // ── INIT ──────────────────────────────────────────────
@@ -1364,6 +1365,7 @@ function init(){
   G.fbSet = fb.set || null;
   G.fbUpdate = fb.update || null;
   G.fbOnValue = fb.onValue || null;
+  G.fbRunTransaction = fb.runTransaction || null;
   hydrateAuth();
   initGoogleAuth();
   renderNavUser();
@@ -1597,6 +1599,7 @@ function ensureRoomStructures(room){
   if(typeof room.auction.paused !== 'boolean') room.auction.paused = false;
   if(typeof room.auction.pausedRemainingMs !== 'number') room.auction.pausedRemainingMs = 0;
   if(typeof room.auction.unsoldRound !== 'boolean') room.auction.unsoldRound = false;
+  if(!room.auction.turnId) room.auction.turnId = String((room.players?.[room.auction.currentIdx]?.id)||'')+'-'+String(room.auction.timerStart||0);
   return room;
 }
 
@@ -1604,11 +1607,13 @@ async function touchPresence(){
   if(!G.roomCode || !G.myId) return;
   const room = await loadRoom(G.roomCode);
   if(!room) return;
-  const me = room.managers.find(m=>m.id===G.myId);
-  if(!me) return;
-  me.lastSeen = Date.now();
-  await saveRoom(room);
-  G.room = room;
+  const idx = room.managers.findIndex(m=>m.id===G.myId);
+  if(idx<0) return;
+  try{
+    await G.fbUpdate(G.fbRef(G.fbDb, 'rooms/'+G.roomCode+'/managers/'+idx), { lastSeen: Date.now() });
+  } catch(e){
+    console.warn('Presence update failed', e);
+  }
 }
 
 function isManagerOnline(manager){
@@ -1625,6 +1630,26 @@ function requireFirebaseRoomState(){
   toast('Connect Firebase to create or join rooms','error');
   showPage('firebase');
   return false;
+}
+
+async function transactRoom(updateFn){
+  if(!requireFirebaseRoomState() || !G.fbRunTransaction) throw new Error('Firebase transactions unavailable');
+  let outcome = { status:'empty' };
+  const result = await G.fbRunTransaction(G.fbRef(G.fbDb, 'rooms/'+G.roomCode), current=>{
+    if(!current){
+      outcome = { status:'missing' };
+      return;
+    }
+    ensureRoomStructures(current);
+    const next = updateFn(current);
+    if(!next){
+      if(!outcome.status || outcome.status==='empty') outcome = { status:'aborted' };
+      return;
+    }
+    outcome = next.outcome || { status:'ok' };
+    return current;
+  });
+  return { committed:result.committed, room:result.snapshot.exists() ? ensureRoomStructures(result.snapshot.val()) : null, outcome };
 }
 
 async function saveRoom(room){
@@ -1677,6 +1702,7 @@ async function syncRoom(){
 let currentPage = 'setup';
 
 function showPage(name){
+  if(name!=='auction') lastAuctionRenderKey='';
   if(name==='leaderboard') name='teams';
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
@@ -1841,31 +1867,36 @@ async function joinRoom(){
   if(!name){ toast('Enter your name','error'); return; }
   if(code.length!==6){ toast('Enter 6-character room code','error'); return; }
 
-  const room = await loadRoom(code);
-  if(!room){ toast('Room not found','error'); return; }
-  if(room.started){ toast('Auction already started — you can still watch!','info'); }
-  if(room.managers.find(m=>m.name.toLowerCase()===name.toLowerCase())){
-    // Re-joining
-    const returningManager = room.managers.find(m=>m.name.toLowerCase()===name.toLowerCase());
-    G.myId = returningManager.id;
-    G.myName = name; G.isHost = room.hostId===G.myId;
-    G.roomCode = code; G.room = room;
-    returningManager.lastSeen = Date.now();
-    try{ await saveRoom(room); }
-    catch(e){ return; }
-    saveSession(); closeModal(); subscribeRoom();
-    showPage(room.started ? 'auction' : 'lobby');
-    toast('Welcome back, '+name+'!','success'); return;
+  G.roomCode = code;
+  const newId = genId();
+  let joinOutcome = null;
+  try{
+    const result = await transactRoom(room=>{
+      const existing = room.managers.find(m=>m.name.toLowerCase()===name.toLowerCase());
+      if(existing){
+        existing.lastSeen = Date.now();
+        return { outcome:{ status:'returning', id:existing.id } };
+      }
+      room.managers.push({ id:newId, name, purse: room.settings.purse, squad:[], lastSeen:Date.now() });
+      return { outcome:{ status:'joined', id:newId } };
+    });
+    if(!result.room){ toast('Room not found','error'); G.roomCode=''; return; }
+    G.room = result.room;
+    joinOutcome = result.outcome;
+  } catch(e){
+    console.warn('Join failed', e);
+    toast('Could not join room. Try again.','error');
+    G.roomCode = '';
+    return;
   }
 
-  G.myId = genId(); G.myName = name; G.isHost = false; G.roomCode = code;
-  room.managers.push({ id:G.myId, name, purse: room.settings.purse, squad:[], lastSeen:Date.now() });
-  try{ await saveRoom(room); }
-  catch(e){ G.roomCode = ''; return; }
-  G.room = room;
+  G.myId = joinOutcome?.id || newId;
+  G.myName = name;
+  G.isHost = G.room.hostId===G.myId;
+  if(G.room.started){ toast('Auction already started - you can still watch!','info'); }
   saveSession(); closeModal(); subscribeRoom();
-  showPage(room.started ? 'auction' : 'lobby');
-  toast('Joined '+room.name,'success');
+  showPage(G.room.started ? 'auction' : 'lobby');
+  toast(joinOutcome?.status==='returning' ? 'Welcome back, '+name+'!' : 'Joined '+G.room.name,'success');
 }
 
 function leaveLobby(){
@@ -2024,67 +2055,101 @@ function readRetentionPurse(){
 }
 
 async function addRetention(){
-  const room=await loadRoom(G.roomCode);
-  if(!room||G.myId!==room.hostId){toast('Only host can set retentions','error');return;}
-  ensureRoomStructures(room);
   const mgrId=document.getElementById('ret-manager').value;
   const playerId=document.getElementById('ret-player').value;
   const purse=readRetentionPurse();
-  const mgr=room.managers.find(m=>m.id===mgrId);
-  const player=(room.players||[]).find(p=>p.id===playerId);
-  if(!mgr||!player){toast('Choose a manager and player','error');return;}
-  if(player.status!=='pending'){toast(player.name+' is not available for retention','error');return;}
   if(purse===null){toast('Enter the auction purse for this manager','error');return;}
-  if(!Array.isArray(mgr.squad)) mgr.squad=[];
-  if(mgr.squad.length>=room.settings.squadSize){toast(mgr.name+' squad is already full','error');return;}
-  if(mgr.squad.some(p=>p.playerId===player.id)){toast(player.name+' is already in this squad','info');return;}
-
-  mgr.retentionBudget=purse;
-  player.status='retained';
-  player.soldTo=mgr.name;
-  player.soldToId=mgr.id;
-  player.soldPrice=0;
-  player.retained=true;
-  mgr.squad.push({playerId:player.id,name:player.name,role:player.role,nation:player.nation,price:0,retained:true});
-  recalcManagerPurse(mgr,room);
-  await saveRoom(room); G.room=room;
-  const purseInput=document.getElementById('ret-purse');
-  if(purseInput) purseInput.dataset.dirty='0';
-  renderLobby();
-  toast(player.name+' retained by '+mgr.name,'success');
+  try{
+    const result=await transactRoom(room=>{
+      if(G.myId!==room.hostId) return { outcome:{status:'not-host'} };
+      const mgr=room.managers.find(m=>m.id===mgrId);
+      const player=(room.players||[]).find(p=>p.id===playerId);
+      if(!mgr||!player) return { outcome:{status:'missing'} };
+      if(player.status!=='pending') return { outcome:{status:'unavailable', playerName:player.name} };
+      if(!Array.isArray(mgr.squad)) mgr.squad=[];
+      if(mgr.squad.length>=room.settings.squadSize) return { outcome:{status:'full', managerName:mgr.name} };
+      if(mgr.squad.some(p=>p.playerId===player.id)) return { outcome:{status:'duplicate', playerName:player.name} };
+      mgr.retentionBudget=purse;
+      player.status='retained';
+      player.soldTo=mgr.name;
+      player.soldToId=mgr.id;
+      player.soldPrice=0;
+      player.retained=true;
+      mgr.squad.push({playerId:player.id,name:player.name,role:player.role,nation:player.nation,price:0,retained:true});
+      recalcManagerPurse(mgr,room);
+      return { outcome:{status:'ok', playerName:player.name, managerName:mgr.name} };
+    });
+    if(result.room) G.room=result.room;
+    const o=result.outcome||{};
+    if(o.status==='not-host') toast('Only host can set retentions','error');
+    else if(o.status==='missing') toast('Choose a manager and player','error');
+    else if(o.status==='unavailable') toast(o.playerName+' is not available for retention','error');
+    else if(o.status==='full') toast(o.managerName+' squad is already full','error');
+    else if(o.status==='duplicate') toast(o.playerName+' is already in this squad','info');
+    else if(o.status==='ok'){
+      const purseInput=document.getElementById('ret-purse');
+      if(purseInput) purseInput.dataset.dirty='0';
+      renderLobby();
+      toast(o.playerName+' retained by '+o.managerName,'success');
+    }
+  } catch(e){
+    console.warn('Retention failed', e);
+    toast('Could not retain player. Try again.','error');
+  }
 }
 
 async function updateRetentionPurse(){
-  const room=await loadRoom(G.roomCode);
-  if(!room||G.myId!==room.hostId){toast('Only host can update purses','error');return;}
-  ensureRoomStructures(room);
-  const mgr=room.managers.find(m=>m.id===document.getElementById('ret-manager').value);
+  const mgrId=document.getElementById('ret-manager').value;
   const purse=readRetentionPurse();
-  if(!mgr||purse===null){toast('Choose a manager and purse','error');return;}
-  mgr.retentionBudget=purse;
-  recalcManagerPurse(mgr,room);
-  await saveRoom(room); G.room=room;
-  const purseInput=document.getElementById('ret-purse');
-  if(purseInput) purseInput.dataset.dirty='0';
-  renderLobby();
-  toast(mgr.name+' purse updated','success');
+  if(purse===null){toast('Choose a manager and purse','error');return;}
+  try{
+    const result=await transactRoom(room=>{
+      if(G.myId!==room.hostId) return { outcome:{status:'not-host'} };
+      const mgr=room.managers.find(m=>m.id===mgrId);
+      if(!mgr) return { outcome:{status:'missing'} };
+      mgr.retentionBudget=purse;
+      recalcManagerPurse(mgr,room);
+      return { outcome:{status:'ok', managerName:mgr.name} };
+    });
+    if(result.room) G.room=result.room;
+    const o=result.outcome||{};
+    if(o.status==='not-host') toast('Only host can update purses','error');
+    else if(o.status==='missing') toast('Choose a manager and purse','error');
+    else if(o.status==='ok'){
+      const purseInput=document.getElementById('ret-purse');
+      if(purseInput) purseInput.dataset.dirty='0';
+      renderLobby();
+      toast(o.managerName+' purse updated','success');
+    }
+  } catch(e){
+    console.warn('Purse update failed', e);
+    toast('Could not update purse. Try again.','error');
+  }
 }
 
 async function removeRetention(managerId, playerId){
-  const room=await loadRoom(G.roomCode);
-  if(!room||G.myId!==room.hostId){toast('Only host can remove retentions','error');return;}
-  ensureRoomStructures(room);
-  const mgr=room.managers.find(m=>m.id===managerId);
-  const player=(room.players||[]).find(p=>p.id===playerId);
-  if(!mgr||!player) return;
-  mgr.squad=(mgr.squad||[]).filter(p=>!(p.retained && p.playerId===playerId));
-  player.status='pending';
-  player.soldTo=''; player.soldToId=''; player.soldPrice=0; player.retained=false;
-  if(!mgr.squad.some(p=>p.retained)) mgr.retentionBudget=null;
-  recalcManagerPurse(mgr,room);
-  await saveRoom(room); G.room=room;
-  renderLobby();
-  toast(player.name+' returned to pool','info');
+  try{
+    const result=await transactRoom(room=>{
+      if(G.myId!==room.hostId) return { outcome:{status:'not-host'} };
+      const mgr=room.managers.find(m=>m.id===managerId);
+      const player=(room.players||[]).find(p=>p.id===playerId);
+      if(!mgr||!player) return { outcome:{status:'missing'} };
+      mgr.squad=(mgr.squad||[]).filter(p=>!(p.retained && p.playerId===playerId));
+      player.status='pending';
+      player.soldTo=''; player.soldToId=''; player.soldPrice=0; player.retained=false;
+      if(!mgr.squad.some(p=>p.retained)) mgr.retentionBudget=null;
+      recalcManagerPurse(mgr,room);
+      return { outcome:{status:'ok', playerName:player.name} };
+    });
+    if(result.room) G.room=result.room;
+    const o=result.outcome||{};
+    if(o.status==='not-host') toast('Only host can remove retentions','error');
+    else if(o.status==='missing') toast('Retention not found','error');
+    else if(o.status==='ok'){ renderLobby(); toast(o.playerName+' returned to pool','info'); }
+  } catch(e){
+    console.warn('Remove retention failed', e);
+    toast('Could not remove retention. Try again.','error');
+  }
 }
 
 function roleBadge(r){
@@ -2312,6 +2377,7 @@ async function startAuction(){
     pausedRemainingMs:0,
     unsoldRound:false
   };
+  room.auction.turnId=room.players[firstIdx].id+'-'+room.auction.timerStart;
   await saveRoom(room); G.room=room; G.hostLobbyOverride=false;
   showPage('auction');
 }
@@ -2341,6 +2407,16 @@ function renderAuction(){
 
   const cp=room.players[a.currentIdx];
   if(!cp) return;
+  const renderKey=[
+    a.turnId,a.currentIdx,a.currentBid,a.currentBidderId,a.paused,a.pausedRemainingMs,
+    cp.id,cp.status,room.managers.map(m=>m.id+':'+m.purse+':'+(m.squad?.length||0)).join('|'),
+    (a.log||[]).length,(room.chat||[]).length
+  ].join('~');
+  if(lastAuctionRenderKey===renderKey){
+    updateTimer(room);
+    return;
+  }
+  lastAuctionRenderKey=renderKey;
   const categoryName = a.unsoldRound ? 'Unsold' : roleName(cp.role);
   const categoryLeft = (room.players||[]).filter(p=>
     p.status===activeStatus && (a.unsoldRound || p.role===cp.role)
@@ -2489,6 +2565,7 @@ function focusAuctionChat(){
 }
 
 let lastTimerRoom='';
+let lastAuctionRenderKey='';
 function updateTimer(room){
   const a=room.auction;
   if(a.paused){
@@ -2505,7 +2582,7 @@ function updateTimer(room){
     lastTimerRoom='';
     return;
   }
-  const key=room.code+'-'+a.currentIdx+'-'+a.timerStart;
+  const key=room.code+'-'+a.currentIdx+'-'+a.timerStart+'-'+(a.turnId||'');
   if(lastTimerRoom===key) return;
   lastTimerRoom=key;
   if(G.timerInterval) clearInterval(G.timerInterval);
@@ -2522,18 +2599,21 @@ function updateTimer(room){
       clearInterval(G.timerInterval);
       G.timerInterval=null;
       lastTimerRoom='';
-      autoSell();
+      autoSell(a.turnId, a.currentIdx, a.timerStart);
     }
   }
   tick();
   G.timerInterval=setInterval(tick,400);
 }
 
-async function autoSell(){
-  const room=await loadRoom(G.roomCode);
-  if(!room||!room.auction.active) return;
-  if(room.auction.currentBidder) await doSold(room);
-  else await doUnsold(room);
+async function autoSell(turnId, currentIdx, timerStart){
+  if(G.autoCloseLock) return;
+  G.autoCloseLock=true;
+  try{
+  await closeAndAdvanceAuction('auto','unsold',{turnId,currentIdx,timerStart});
+  } finally {
+    G.autoCloseLock=false;
+  }
 }
 
 // ── BIDDING ───────────────────────────────────────────
@@ -2543,178 +2623,77 @@ async function doBid(amount, sourceBtn=null){
   if(sourceBtn) sourceBtn.disabled=true;
   setBidControlsBusy(true);
   const finishBid=()=>{ G.bidLock=false; renderAuction(); };
-  const room=await loadRoom(G.roomCode);
-  if(!room||!room.auction.active){toast('Auction not active','error');finishBid();return;}
-  if(room.auction.paused){toast('Auction is paused','info');finishBid();return;}
-  const myM=room.managers.find(m=>m.id===G.myId);
-  if(!myM){toast('You are not in this room','error');finishBid();return;}
-  if(!Array.isArray(myM.squad)) myM.squad=[];
-  const squadSize=Number(room.settings?.squadSize)||15;
-  if(myM.squad.length>=squadSize){
-    toast('Squad limit reached: '+squadSize+' players','error');finishBid();return;
-  }
-
   let bid=amount;
   if(amount==='custom'){
     bid=normalizeAmount(document.getElementById('custom-bid').value);
     if(!bid||bid<DEFAULT_PLAYER_BASE){toast('Enter a valid amount','error');finishBid();return;}
   }
   bid=normalizeAmount(bid);
-
-  const a=room.auction;
-  const cp=room.players[a.currentIdx];
-  if(!cp || !['pending','queued_unsold'].includes(cp.status)){
-    toast('This player is already closed','info');finishBid();return;
+  try{
+    const result=await transactRoom(room=>{
+      if(!room.auction||!room.auction.active) return { outcome:{status:'inactive'} };
+      if(room.auction.paused) return { outcome:{status:'paused'} };
+      const myM=room.managers.find(m=>m.id===G.myId);
+      if(!myM) return { outcome:{status:'not-manager'} };
+      if(!Array.isArray(myM.squad)) myM.squad=[];
+      const squadSize=Number(room.settings?.squadSize)||15;
+      if(myM.squad.length>=squadSize) return { outcome:{status:'squad-full', squadSize} };
+      const a=room.auction;
+      const cp=room.players[a.currentIdx];
+      if(!cp || !['pending','queued_unsold'].includes(cp.status)) return { outcome:{status:'closed'} };
+      const minBid=normalizeAmount(a.currentBid + (a.currentBidder ? MIN_BID_INCREMENT : 0));
+      if(bid<minBid) return { outcome:{status:'low', minBid} };
+      if(bid>normalizeAmount(myM.purse)) return { outcome:{status:'purse', purse:normalizeAmount(myM.purse)} };
+      a.currentBid=bid;
+      a.currentBidder=myM.name;
+      a.currentBidderId=myM.id;
+      a.timerStart=Date.now();
+      a.turnId=cp.id+'-'+a.timerStart;
+      a.log.push({type:'bid',text:'Bid: '+myM.name+' -> '+formatMoney(bid)+' ('+cp.name+')'});
+      return { outcome:{status:'ok'} };
+    });
+    if(result.room) G.room=result.room;
+    const o=result.outcome||{};
+    if(o.status==='inactive') toast('Auction not active','error');
+    else if(o.status==='paused') toast('Auction is paused','info');
+    else if(o.status==='not-manager') toast('You are not in this room','error');
+    else if(o.status==='squad-full') toast('Squad limit reached: '+o.squadSize+' players','error');
+    else if(o.status==='low') toast('Must bid at least '+formatMoney(o.minBid),'error');
+    else if(o.status==='purse') toast('Not enough purse! You have '+formatMoney(o.purse),'error');
+    else if(o.status==='ok') document.getElementById('custom-bid').value='';
+  } catch(e){
+    console.warn('Bid transaction failed', e);
+    toast('Bid did not go through. Try again.','error');
   }
-  const minBid = normalizeAmount(a.currentBid + (a.currentBidder ? MIN_BID_INCREMENT : 0));
-  if(bid<minBid){
-    toast('Must bid at least '+formatMoney(minBid),'error');finishBid();return;
-  }
-  if(bid>normalizeAmount(myM.purse)){toast('Not enough purse! You have '+formatMoney(myM.purse),'error');finishBid();return;}
-
-  room.auction.currentBid=bid;
-  room.auction.currentBidder=myM.name;
-  room.auction.currentBidderId=myM.id;
-  room.auction.timerStart=Date.now();
-  room.auction.log.push({type:'bid',text:'💰 '+myM.name+' → '+formatMoney(bid)+' ('+cp.name+')'});
-  await saveRoom(room); G.room=room;
-  document.getElementById('custom-bid').value='';
-  renderAuction();
   finishBid();
 }
 
-// ── HOST CONTROLS ─────────────────────────────────────
 async function sendChatMessage(){
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if(!text) return;
-  const room=await loadRoom(G.roomCode);
-  if(!room){toast('Room not found','error');return;}
-  ensureRoomStructures(room);
-  room.chat.push({
+  if(!requireFirebaseRoomState() || !G.roomCode){toast('Room not found','error');return;}
+  const msg={
     id:genId(),
     senderId:G.myId,
     senderName:G.myName||'Guest',
     text:text.slice(0,200),
     createdAt:Date.now()
-  });
-  if(room.chat.length>200) room.chat=room.chat.slice(-200);
-  await saveRoom(room); G.room=room;
-  input.value='';
-  renderChat(room);
-}
-
-async function hostSold(){
-  const room=await loadRoom(G.roomCode);
-  if(!room||!room.auction||!room.auction.active){toast('Auction not active','error');return;}
-  if(!room.auction.currentBidder){toast('No bids yet!','error');return;}
-  await doSold(room);
-}
-
-async function doSold(room){
-  if(G.soldLock){toast('Sale already being saved','info');return;}
-  G.soldLock=true;
+  };
   try{
-  const a=room.auction;
-  const cp=room.players[a.currentIdx];
-  if(!cp || !['pending','queued_unsold'].includes(cp.status)){
-    toast('This player is already closed','info');
-    return;
-  }
-  if(!a.currentBidderId || !a.currentBidder){
-    toast('No bidder selected','error');
-    return;
-  }
-  const mgr=room.managers.find(m=>m.id===a.currentBidderId);
-  if(!mgr){toast('Winning team not found','error');return;}
-  if(!Array.isArray(mgr.squad)) mgr.squad=[];
-  const squadSize=Number(room.settings?.squadSize)||15;
-  if(mgr.squad.length>=squadSize){toast(mgr.name+' already has '+squadSize+' players','error');return;}
-  if((mgr.squad||[]).some(p=>p.playerId===cp.id || (!p.playerId && p.name===cp.name))){
-    toast(cp.name+' is already in '+mgr.name+' squad','info');
-    return;
-  }
-  if(a.currentBid>mgr.purse){toast(mgr.name+' does not have enough purse','error');return;}
-  cp.status='sold'; cp.soldTo=a.currentBidder; cp.soldToId=a.currentBidderId; cp.soldPrice=a.currentBid;
-  mgr.purse=normalizeAmount(mgr.purse-a.currentBid);
-  mgr.squad.push({playerId:cp.id,name:cp.name,role:cp.role,nation:cp.nation,price:a.currentBid});
-  a.log.push({type:'sold',text:'🎉 SOLD! '+cp.name+' → '+a.currentBidder+' @ '+formatMoney(a.currentBid)});
-  await saveRoom(room); G.room=room;
-  if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
-  toast(cp.name+' sold to '+a.currentBidder+' for '+formatMoney(a.currentBid),'success');
-  await advanceNext(room);
-  } finally {
-    G.soldLock=false;
+    await G.fbRunTransaction(G.fbRef(G.fbDb, 'rooms/'+G.roomCode+'/chat'), current=>{
+      const chat=Array.isArray(current) ? current : [];
+      chat.push(msg);
+      return chat.slice(-200);
+    });
+    input.value='';
+  } catch(e){
+    console.warn('Chat send failed', e);
+    toast('Could not send chat','error');
   }
 }
 
-async function hostUnsold(){
-  const room=await loadRoom(G.roomCode);
-  await doUnsold(room);
-}
-
-async function doUnsold(room, reason='unsold'){
-  if(G.advanceLock){toast('Action already being saved','info');return;}
-  G.advanceLock=true;
-  try{
-  const a=room.auction;
-  const cp=room.players[a.currentIdx];
-  if(!cp || !['pending','queued_unsold'].includes(cp.status)){
-    toast('This player is already closed','info');
-    return;
-  }
-  const finalUnsold = a.unsoldRound || cp.status==='queued_unsold';
-  cp.status=finalUnsold ? 'unsold' : 'queued_unsold';
-  if(finalUnsold){
-    a.log.push({type:'unsold',text:'❌ Unsold: '+cp.name});
-  } else {
-    const action = reason==='skip' ? 'Skipped' : 'Unsold';
-    a.log.push({type:'unsold',text:'❌ '+action+': '+cp.name+' moved to UNSOLD'});
-  }
-  await saveRoom(room); G.room=room;
-  if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
-  toast(finalUnsold ? cp.name+' unsold' : cp.name+' moved to UNSOLD','info');
-  await advanceNext(room);
-  } finally {
-    G.advanceLock=false;
-  }
-}
-
-async function hostNext(){
-  const room=await loadRoom(G.roomCode);
-  if(!room||!room.auction||!room.auction.active){toast('Auction not active','error');return;}
-  await doUnsold(room,'skip');
-}
-
-async function togglePauseAuction(){
-  const room=await loadRoom(G.roomCode);
-  if(!room||!room.auction||!room.auction.active){toast('Auction not active','error');return;}
-  const dur=room.settings.timerSeconds*1000;
-  if(room.auction.paused){
-    const remaining = room.auction.pausedRemainingMs || dur;
-    room.auction.paused=false;
-    room.auction.timerStart=Date.now()-(dur-remaining);
-    room.auction.pausedRemainingMs=0;
-    room.auction.log.push({type:'system',text:'▶ Auction resumed by host'});
-    await saveRoom(room); G.room=room; lastTimerRoom='';
-    renderAuction();
-    return;
-  }
-  const elapsed=Date.now()-room.auction.timerStart;
-  room.auction.paused=true;
-  room.auction.pausedRemainingMs=Math.max(0,dur-elapsed);
-  room.auction.log.push({type:'system',text:'⏸ Auction paused by host'});
-  await saveRoom(room); G.room=room;
-  if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
-  renderAuction();
-}
-
-function hostBackToLobby(){
-  G.hostLobbyOverride=true;
-  showPage('lobby');
-}
-
-async function advanceNext(room){
+function advanceAuctionState(room){
   const a=room.auction;
   const nextStatus = a.unsoldRound ? 'queued_unsold' : 'pending';
   let next=-1;
@@ -2730,26 +2709,163 @@ async function advanceNext(room){
   }
   if(next===-1){
     a.active=false; a.ended=true; a.paused=false; a.pausedRemainingMs=0;
-    a.log.push({type:'system',text:'🏁 Auction complete!'});
-    await saveRoom(room); G.room=room;
-    if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
-    showWinner(room); return;
+    a.log.push({type:'system',text:'Auction complete!'});
+    return { complete:true };
   }
-  a.currentIdx=next; a.currentBid=room.players[next].base;
-  a.currentBidder=''; a.currentBidderId=''; a.timerStart=Date.now(); a.paused=false; a.pausedRemainingMs=0;
-  a.log.push({type:'system',text:'🎯 Up next: '+room.players[next].name});
-  await saveRoom(room); G.room=room; lastTimerRoom='';
-  renderAuction();
+  a.currentIdx=next;
+  a.currentBid=room.players[next].base;
+  a.currentBidder='';
+  a.currentBidderId='';
+  a.timerStart=Date.now();
+  a.paused=false;
+  a.pausedRemainingMs=0;
+  a.turnId=room.players[next].id+'-'+a.timerStart;
+  a.log.push({type:'system',text:'Up next: '+room.players[next].name});
+  return { complete:false };
+}
+
+async function closeAndAdvanceAuction(action, reason='unsold', expected=null){
+  if(G.advanceLock) return;
+  G.advanceLock=true;
+  try{
+    const result=await transactRoom(room=>{
+      const a=room.auction;
+      if(!a||!a.active) return { outcome:{status:'inactive'} };
+      if(expected && (a.turnId!==expected.turnId || a.currentIdx!==expected.currentIdx || a.timerStart!==expected.timerStart)){
+        return { outcome:{status:'stale'} };
+      }
+      if(action==='auto') action = a.currentBidder ? 'sold' : 'unsold';
+      const cp=room.players[a.currentIdx];
+      if(!cp || !['pending','queued_unsold'].includes(cp.status)) return { outcome:{status:'closed'} };
+      if(action==='sold'){
+        if(!a.currentBidderId || !a.currentBidder) return { outcome:{status:'no-bid'} };
+        const mgr=room.managers.find(m=>m.id===a.currentBidderId);
+        if(!mgr) return { outcome:{status:'missing-manager'} };
+        if(!Array.isArray(mgr.squad)) mgr.squad=[];
+        const squadSize=Number(room.settings?.squadSize)||15;
+        if(mgr.squad.length>=squadSize) return { outcome:{status:'squad-full', managerName:mgr.name, squadSize} };
+        if((mgr.squad||[]).some(p=>p.playerId===cp.id || (!p.playerId && p.name===cp.name))){
+          return { outcome:{status:'duplicate'} };
+        }
+        if(a.currentBid>mgr.purse) return { outcome:{status:'purse', managerName:mgr.name} };
+        const buyer=a.currentBidder;
+        const price=a.currentBid;
+        cp.status='sold';
+        cp.soldTo=buyer;
+        cp.soldToId=a.currentBidderId;
+        cp.soldPrice=price;
+        mgr.purse=normalizeAmount(mgr.purse-price);
+        mgr.squad.push({playerId:cp.id,name:cp.name,role:cp.role,nation:cp.nation,price});
+        a.log.push({type:'sold',text:'SOLD! '+cp.name+' -> '+buyer+' @ '+formatMoney(price)});
+        const advance=advanceAuctionState(room);
+        return { outcome:{status:'sold', playerName:cp.name, buyer, price, complete:advance.complete} };
+      }
+      const finalUnsold = a.unsoldRound || cp.status==='queued_unsold';
+      cp.status=finalUnsold ? 'unsold' : 'queued_unsold';
+      if(finalUnsold){
+        a.log.push({type:'unsold',text:'Unsold: '+cp.name});
+      } else {
+        const label = reason==='skip' ? 'Skipped' : 'Unsold';
+        a.log.push({type:'unsold',text:label+': '+cp.name+' moved to UNSOLD'});
+      }
+      const advance=advanceAuctionState(room);
+      return { outcome:{status:'unsold', playerName:cp.name, finalUnsold, complete:advance.complete} };
+    });
+    if(result.room) G.room=result.room;
+    if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
+    lastAuctionRenderKey='';
+    const o=result.outcome||{};
+    if(o.status==='inactive' || o.status==='closed' || o.status==='stale') return;
+    if(o.status==='no-bid'){toast('No bids yet!','error');return;}
+    if(o.status==='missing-manager'){toast('Winning team not found','error');return;}
+    if(o.status==='squad-full'){toast(o.managerName+' already has '+o.squadSize+' players','error');return;}
+    if(o.status==='purse'){toast(o.managerName+' does not have enough purse','error');return;}
+    if(o.status==='sold') toast(o.playerName+' sold to '+o.buyer+' for '+formatMoney(o.price),'success');
+    else if(o.status==='unsold') toast(o.finalUnsold ? o.playerName+' unsold' : o.playerName+' moved to UNSOLD','info');
+    if(o.complete) showWinner(G.room);
+    else renderAuction();
+  } catch(e){
+    console.warn('Close and advance failed', e);
+    toast('Could not move to the next player. Try again.','error');
+  } finally {
+    G.advanceLock=false;
+  }
+}
+
+async function hostSold(){
+  await closeAndAdvanceAuction('sold');
+}
+
+async function hostUnsold(){
+  await closeAndAdvanceAuction('unsold');
+}
+
+async function hostNext(){
+  await closeAndAdvanceAuction('unsold','skip');
+}
+
+async function autoCloseSold(){
+  await closeAndAdvanceAuction('sold');
+}
+
+async function doSold(room, opts={}){
+  await closeAndAdvanceAuction('sold');
+}
+
+async function doUnsold(room, reason='unsold', opts={}){
+  await closeAndAdvanceAuction('unsold', reason);
+}
+
+async function togglePauseAuction(){
+  try{
+    const result=await transactRoom(room=>{
+      const a=room.auction;
+      if(!a||!a.active) return { outcome:{status:'inactive'} };
+      const dur=room.settings.timerSeconds*1000;
+      if(a.paused){
+        const remaining=a.pausedRemainingMs || dur;
+        a.paused=false;
+        a.timerStart=Date.now()-(dur-remaining);
+        a.pausedRemainingMs=0;
+        a.turnId=String(room.players?.[a.currentIdx]?.id||'')+'-'+a.timerStart;
+        a.log.push({type:'system',text:'Auction resumed by host'});
+        return { outcome:{status:'resumed'} };
+      }
+      const elapsed=Date.now()-a.timerStart;
+      a.paused=true;
+      a.pausedRemainingMs=Math.max(0,dur-elapsed);
+      a.log.push({type:'system',text:'Auction paused by host'});
+      return { outcome:{status:'paused'} };
+    });
+    if(result.room) G.room=result.room;
+    if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
+    lastAuctionRenderKey='';
+    renderAuction();
+  } catch(e){
+    console.warn('Pause toggle failed', e);
+    toast('Could not update pause state','error');
+  }
 }
 
 async function hostEnd(){
   if(!confirm('End auction now?')) return;
-  const room=await loadRoom(G.roomCode);
-  room.auction.active=false; room.auction.ended=true; room.auction.paused=false; room.auction.pausedRemainingMs=0;
-  room.auction.log.push({type:'system',text:'🏁 Auction ended by host'});
-  await saveRoom(room); G.room=room;
-  if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
-  showWinner(room);
+  try{
+    const result=await transactRoom(room=>{
+      if(!room.auction) return { outcome:{status:'inactive'} };
+      room.auction.active=false;
+      room.auction.ended=true;
+      room.auction.paused=false;
+      room.auction.pausedRemainingMs=0;
+      room.auction.log.push({type:'system',text:'Auction ended by host'});
+      return { outcome:{status:'ok'} };
+    });
+    if(result.room) G.room=result.room;
+    if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
+    showWinner(G.room);
+  } catch(e){
+    console.warn('End auction failed', e);
+    toast('Could not end auction','error');
+  }
 }
 
 // ── SOLD OVERLAY ──────────────────────────────────────
@@ -2762,7 +2878,6 @@ function showSold(name,buyer,price){
 }
 function hideSold(){
   document.getElementById('sold-overlay').classList.remove('show');
-  advanceNext(G.room);
 }
 
 // ── WINNER ────────────────────────────────────────────
