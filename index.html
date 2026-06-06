@@ -2111,9 +2111,9 @@ async function joinRoom(){
   G.roomCode = code;
   const newId = genId();
   let joinOutcome = null;
-  
+
   try{
-    // STEP 1: Verify room exists before attempting transaction
+    // STEP 1: Load the room to check it exists and get current state
     console.log('[JOIN] Checking if room exists:', code);
     const existingRoom = await loadRoom(code);
     if(!existingRoom){
@@ -2123,75 +2123,43 @@ async function joinRoom(){
       return;
     }
     console.log('[JOIN] Room found:', { code, name: existingRoom.name, managers: existingRoom.managers?.length || 0 });
-    
-    // STEP 2: Now attempt to join via transaction
-    console.log('[JOIN] Starting transaction...');
-    const result = await transactRoom(room=>{
-      console.log('[JOIN-TX] Inside callback, room managers:', room.managers?.length || 0);
-      
-      // FIX: Ensure managers is an array
-      if(!Array.isArray(room.managers)) {
-        console.warn('[JOIN-TX] Managers is not array, fixing');
-        room.managers = [];
-      }
-      
-      const existing = room.managers.find(m=>m.name?.toLowerCase?.()===name.toLowerCase());
-      if(existing){
-        console.log('[JOIN-TX] Existing manager found:', existing.id);
-        if(!room.presence) room.presence = {};
-        room.presence[existing.id]={ lastSeen:Date.now(), online:true };
-        return { outcome:{ status:'returning', id:existing.id } };
-      }
-      
-      console.log('[JOIN-TX] New manager, adding to room');
-      if(!room.presence) room.presence = {};
-      room.managers.push({ id:newId, name, purse: room.settings.purse, squad:[] });
-      room.presence[newId]={ lastSeen:Date.now(), online:true };
-      return { outcome:{ status:'joined', id:newId } };
-    });
-    
-    console.log('[JOIN] Transaction result:', { committed: result.committed, hasRoom: !!result.room, outcome: result.outcome });
-    
-    if(!result.committed){
-      console.warn('[JOIN] Transaction not committed');
-      toast('Could not join (another change happened). Try again.','error');
-      G.roomCode='';
-      return;
+
+    // STEP 2: Check if user with same name already exists (rejoin)
+    const existing = existingRoom.managers.find(m=>m.name?.toLowerCase?.()===name.toLowerCase());
+    if(existing){
+      // Returning manager — just update presence, no write to managers array needed
+      console.log('[JOIN] Returning manager:', existing.id);
+      await G.fbUpdate(G.fbRef(G.fbDb, 'rooms/'+code+'/presence/'+existing.id), { lastSeen: Date.now(), online: true });
+      G.room = existingRoom;
+      joinOutcome = { status:'returning', id: existing.id };
+    } else {
+      // STEP 3: New manager — write directly to managers list and presence
+      // Using push() to managers sub-path avoids a full-room transaction entirely.
+      // This sidesteps the Firebase RTDB null-retry problem on large nodes.
+      console.log('[JOIN] New manager, writing to Firebase');
+      if(!G.fbPush || !G.fbUpdate) throw new Error('Firebase push/update APIs unavailable');
+      const mgrObj = { id: newId, name, purse: existingRoom.settings?.purse ?? 0, squad: [] };
+
+      // Write the manager entry and presence atomically via multi-path update
+      const updates = {};
+      // Use a push-key style path: managers/<newId> keyed by the manager's own id
+      updates['rooms/'+code+'/managers/'+newId] = mgrObj;
+      updates['rooms/'+code+'/presence/'+newId] = { lastSeen: Date.now(), online: true };
+      updates['rooms/'+code+'/lastActivity'] = Date.now();
+      await G.fbUpdate(G.fbRef(G.fbDb, '/'), updates);
+
+      // Reload room after write so G.room has the full up-to-date state
+      const updatedRoom = await loadRoom(code);
+      if(!updatedRoom) throw new Error('Could not reload room after join write');
+      G.room = updatedRoom;
+      joinOutcome = { status:'joined', id: newId };
+      console.log('[JOIN] New manager joined successfully:', newId);
     }
-    if(!result.room){
-      console.warn('[JOIN] Transaction result missing room data');
-      toast('Room join failed (no data)','error');
-      G.roomCode='';
-      return;
-    }
-    
-    G.room = result.room;
-    joinOutcome = result.outcome;
-    console.log('[JOIN] Success:', joinOutcome);
   } catch(e){
     console.error('[JOIN] Exception caught:', e.message, e.stack);
-    console.error('[JOIN] Full error:', e);
-    // Attempt a non-transactional fallback if transactions fail
-    try{
-      console.log('[JOIN] Attempting fallback join via push/update');
-      if(!G.fbPush || !G.fbRef || !G.fbUpdate || !G.fbGet) throw new Error('Fallback Firebase APIs unavailable');
-      const mgrObj = { id:newId, name, purse: existingRoom?.settings?.purse || 0, squad:[] };
-      const mgrRef = G.fbRef(G.fbDb, 'rooms/'+G.roomCode+'/managers');
-      await G.fbPush(mgrRef, mgrObj);
-      const presRef = G.fbRef(G.fbDb, 'rooms/'+G.roomCode+'/presence/'+newId);
-      await G.fbUpdate(presRef, { lastSeen: Date.now(), online:true });
-      // Reload room state
-      const r = await loadRoom(G.roomCode);
-      if(!r) throw new Error('Fallback join failed to load room');
-      G.room = r;
-      joinOutcome = { status:'joined', id:newId };
-      console.log('[JOIN] Fallback join succeeded', { id:newId, code:G.roomCode });
-    } catch(fe){
-      console.error('[JOIN] Fallback failed:', fe);
-      toast('Could not join room. Try again.','error');
-      G.roomCode = '';
-      return;
-    }
+    toast('Could not join room. Try again.','error');
+    G.roomCode = '';
+    return;
   }
 
   G.myId = joinOutcome?.id || newId;
