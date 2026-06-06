@@ -1671,7 +1671,7 @@ function ensureRoomStructures(room){
   if(typeof room.auction.unsoldRound !== 'boolean') room.auction.unsoldRound = false;
   if(!room.auction.timerEndAt && room.auction.timerStart) room.auction.timerEndAt = room.auction.timerStart + roomTimerMs(room);
   if(!room.auction.timerStart && room.auction.timerEndAt) room.auction.timerStart = room.auction.timerEndAt - roomTimerMs(room);
-  if(!room.auction.turnId) room.auction.turnId = String((room.players?.[room.auction.currentIdx]?.id)||'')+'-'+String(room.auction.timerStart||0);
+  if(!room.auction.turnId) room.auction.turnId = String((room.players?.[room.auction.currentIdx]?.id)||'')+'-'+genId();
   return room;
 }
 
@@ -2748,15 +2748,15 @@ async function startAuction(){
     active:true, currentIdx:firstIdx,
     currentBid:room.players[firstIdx].base,
     currentBidder:'', currentBidderId:'',
-    timerStart:Date.now(),
-    timerEndAt:0,
+    // use server timestamp for consistent timing across clients
+    timerStart: window._fb && window._fb.serverTimestamp ? window._fb.serverTimestamp() : Date.now(),
+    timerDurMs: roomTimerMs(room),
     log:[{type:'system',text:'🎙️ Auction started — '+room.players.filter(p=>p.status==='pending').length+' players'}],
     paused:false,
     pausedRemainingMs:0,
     unsoldRound:false
   };
-  room.auction.timerEndAt=room.auction.timerStart+roomTimerMs(room);
-  room.auction.turnId=room.players[firstIdx].id+'-'+room.auction.timerStart;
+  room.auction.turnId=room.players[firstIdx].id+'-'+genId();
   room.logs=[{type:'system',text:'Auction started - '+room.players.filter(p=>p.status==='pending').length+' players',createdAt:Date.now()}];
   await saveRoom(room); G.room=room; G.hostLobbyOverride=false;
   showPage('auction');
@@ -3198,16 +3198,18 @@ function updateTimer(room){
     lastTimerRoom='';
     return;
   }
-  if(!a.timerEndAt && a.timerStart) a.timerEndAt = a.timerStart + roomTimerMs(room);
+  if(!a.timerEndAt && a.timerStart) a.timerEndAt = a.timerStart + (a.timerDurMs || roomTimerMs(room));
   const key=room.code+'-'+a.currentIdx+'-'+(a.timerEndAt||0)+'-'+(a.turnId||'');
   if(lastTimerRoom===key) return;
   lastTimerRoom=key;
   if(G.timerInterval) clearInterval(G.timerInterval);
   const dur=roomTimerMs(room);
   function tick(){
-    const remainingMs=Math.max(0,(a.timerEndAt||Date.now())-Date.now());
+    const endAt = a.timerEndAt || (a.timerStart ? (a.timerStart + (a.timerDurMs || roomTimerMs(room))) : Date.now());
+    const remainingMs=Math.max(0, endAt - Date.now());
     const rem=Math.max(0,Math.ceil(remainingMs/1000));
-    const pct=Math.max(0,remainingMs/dur*100);
+    const totalDur = (a.timerDurMs || dur);
+    const pct=Math.max(0, totalDur ? (remainingMs/totalDur*100) : 0);
     const td=document.getElementById('timer-display');
     const tf=document.getElementById('timer-fill');
     if(td) td.textContent=rem+'s';
@@ -3264,15 +3266,16 @@ async function doBid(amount, sourceBtn=null){
     const prevAuction = room.auction ? JSON.parse(JSON.stringify(room.auction)) : null;
 
     // Optimistic UI update so the bid feels instant
+    // Use a generated turnId (not timestamp-based) so clients can compare reliably
+    const optimisticTurnId = (cp?cp.id:'') + '-' + genId();
     try{
       if(!room.auction) room.auction={};
       room.auction.currentBid=bid;
       room.auction.currentBidder=myM.name;
       room.auction.currentBidderId=myM.id;
-      const now=Date.now();
-      room.auction.timerStart=now;
-      room.auction.timerEndAt=now+roomTimerMs(room);
-      room.auction.turnId = (cp?cp.id:'')+'-'+room.auction.timerStart;
+      // optimistic timer values use local clock but server will set authoritative timerStart
+      room.auction.timerDurMs = roomTimerMs(room);
+      room.auction.turnId = optimisticTurnId;
     } catch(e){/* ignore */}
     renderBidState(); renderTimer();
 
@@ -3286,6 +3289,8 @@ async function doBid(amount, sourceBtn=null){
       cp = room?.players?.[localAuction.currentIdx];
 
       G.telemetry.txTotal++;
+      // Capture the intended turnId for this transact so server writes it verbatim
+      const txnTurnId = optimisticTurnId;
       result = await transactAuction(a=>{
         if(!a||!a.active) return { outcome:{status:'inactive'} };
         if(a.paused) return { outcome:{status:'paused'} };
@@ -3294,13 +3299,13 @@ async function doBid(amount, sourceBtn=null){
         const minBid=normalizeAmount(a.currentBid + (a.currentBidder ? MIN_BID_INCREMENT : 0));
         if(bid<minBid) return { outcome:{status:'low', minBid} };
         if(bid>normalizeAmount(myM.purse)) return { outcome:{status:'purse', purse:normalizeAmount(myM.purse)} };
-        const now=Date.now();
         a.currentBid=bid;
         a.currentBidder=myM.name;
         a.currentBidderId=myM.id;
-        a.timerStart=now;
-        a.timerEndAt=now+roomTimerMs(room);
-        a.turnId=(cp?cp.id:'')+'-'+a.timerStart;
+        // set server timestamp and duration; clients will compute timerEnd from timerStart+timerDurMs
+        a.timerStart = window._fb && window._fb.serverTimestamp ? window._fb.serverTimestamp() : Date.now();
+        a.timerDurMs = roomTimerMs(room);
+        a.turnId = txnTurnId;
         return { outcome:{status:'ok'} };
       });
 
@@ -3418,11 +3423,11 @@ function advanceAuctionState(room){
   a.currentBid=room.players[next].base;
   a.currentBidder='';
   a.currentBidderId='';
-  a.timerStart=Date.now();
-  a.timerEndAt=a.timerStart+roomTimerMs(room);
+  a.timerStart = window._fb && window._fb.serverTimestamp ? window._fb.serverTimestamp() : Date.now();
+  a.timerDurMs = roomTimerMs(room);
   a.paused=false;
   a.pausedRemainingMs=0;
-  a.turnId=room.players[next].id+'-'+a.timerStart;
+  a.turnId=room.players[next].id+'-'+genId();
   room.logs.push({type:'system',text:'Up next: '+room.players[next].name,createdAt:Date.now()});
   return { complete:false };
 }
@@ -3548,16 +3553,17 @@ async function togglePauseAuction(){
       if(a.paused){
         const remaining=a.pausedRemainingMs || dur;
         a.paused=false;
-        a.timerStart=Date.now()-(dur-remaining);
-        a.timerEndAt=Date.now()+remaining;
+        // On resume, set server timestamp sentinel and keep duration; clients will compute end from timerStart+timerDurMs
+        a.timerDurMs = dur;
+        a.timerStart = window._fb && window._fb.serverTimestamp ? window._fb.serverTimestamp() : Date.now();
         a.pausedRemainingMs=0;
-        a.turnId=String(room.players?.[a.currentIdx]?.id||'')+'-'+a.timerStart;
+        a.turnId=String(room.players?.[a.currentIdx]?.id||'')+'-'+genId();
         room.logs.push({type:'system',text:'Auction resumed by host',createdAt:Date.now()});
         return { outcome:{status:'resumed'} };
       }
-      const elapsed=Date.now()-a.timerStart;
+      const elapsed=Date.now()- (a.timerStart || Date.now());
       a.paused=true;
-      a.pausedRemainingMs=Math.max(0,(a.timerEndAt || Date.now()+Math.max(0,dur-elapsed))-Date.now());
+      a.pausedRemainingMs=Math.max(0, (a.timerDurMs || dur) - elapsed);
       a.timerEndAt=0;
       room.logs.push({type:'system',text:'Auction paused by host',createdAt:Date.now()});
       return { outcome:{status:'paused'} };
