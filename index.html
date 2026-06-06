@@ -1201,6 +1201,8 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
       <div class="auth-card">
         <p class="auth-copy">Sign in with Google to continue with your auction room. Your name, email, and profile picture stay on this device.</p>
         <div id="google-signin-slot"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin:16px 0;opacity:.6"><div style="flex:1;height:1px;background:var(--bd2)"></div><span style="font-size:.75rem;color:var(--t3)">or</span><div style="flex:1;height:1px;background:var(--bd2)"></div></div>
+        <button class="btn btn-outline btn-w" onclick="signInAsGuest()">👤 Continue as Guest</button>
         <p class="auth-note">No backend needed. Sign-in is handled directly in your browser.</p>
       </div>
     </div>
@@ -1475,6 +1477,20 @@ function handleGoogleCredential(response){
   } catch(e){
     toast('Google sign-in failed. Please try again.','error');
   }
+}
+
+function signInAsGuest(){
+  const guestUser = {
+    name: 'Guest User',
+    email: 'guest@local',
+    picture: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%2338bdf8%22/%3E%3Ccircle cx=%2250%22 cy=%2235%22 r=%2215%22 fill=%22%23fff%22/%3E%3Cpath d=%22M30 60 Q50 75 70 60%22 stroke=%22%23fff%22 stroke-width=%225%22 fill=%22none%22/%3E%3C/svg%3E'
+  };
+  persistAuth(guestUser);
+  toast('Signed in as Guest','success');
+  closeModal();
+  const nextAction = G.pendingAction || 'create';
+  G.pendingAction = '';
+  showModal(nextAction);
 }
 
 function escapeHTML(value){
