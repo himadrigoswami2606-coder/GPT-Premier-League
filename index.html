@@ -703,22 +703,15 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     background:#050607;
   }
   .block-header{
-    display:block;
+    display:flex;
+    align-items:center;
+    gap:12px;
     min-height:0;
     padding:12px 14px 14px;
     margin-bottom:10px;
   }
   .mobile-player-name{
-    display:block;
-    color:#fff;
-    font-size:1.28rem;
-    line-height:1.2;
-    font-weight:900;
-    margin:0 0 10px;
-    min-height:1.55em;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
+    display:none;
   }
   .player-showcase{
     display:flex;
@@ -730,6 +723,18 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
   .player-showcase-info{min-width:0;flex:1}
   .player-big-avatar{width:54px;height:54px;flex:0 0 54px}
   .player-showcase-name{
+    display:block!important;
+    font-family:Arial,Helvetica,sans-serif;
+    font-size:1.22rem;
+    font-weight:900;
+    color:#fff;
+    line-height:1.2;
+    margin-bottom:6px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .mobile-player-name{
     display:none!important;
   }
   .player-tags{
