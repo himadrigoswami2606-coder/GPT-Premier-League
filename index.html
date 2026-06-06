@@ -1782,32 +1782,23 @@ async function transactRoom(updateFn){
     console.log('[TRANSACT] path =', path);
 
     const result = await G.fbRunTransaction(G.fbRef(G.fbDb, path), current=>{
-      console.log('[TRANSACT] current value:', current);
-      console.log('[TRANSACT] typeof current:', typeof current);
-      if(!current){
-        if(preValue){
-          console.warn('[TRANSACT] current is null; seeding from preValue to proceed');
-          current = preValue;
-        } else {
-          outcome = { status:'missing' };
-          console.warn('[TRANSACT] Room missing during transaction for path:', path, 'roomCode:', G.roomCode);
-          return;
-        }
+      // Firebase RTDB sends null on first call for large nodes — this is normal.
+      // Return undefined to abort so Firebase retries with the real server value.
+      // NEVER seed from preValue: writing stale local data causes sync corruption.
+      if(current === null || current === undefined){
+        outcome = { status:'null-retry' };
+        return; // undefined = abort & retry with real value
       }
-      // log brief shape inside transaction
-      try{ console.log('[TRANSACT] Inside transaction, current keys:', Object.keys(current).slice(0,10)); } catch(_){}
       ensureRoomStructures(current);
       const next = updateFn(current);
       if(!next){
         if(!outcome.status || outcome.status==='empty') outcome = { status:'aborted' };
-        console.warn('[TRANSACT] Update aborted by callback');
         return;
       }
       outcome = next.outcome || { status:'ok' };
-      console.log('[TRANSACT] Outcome set:', outcome);
       return current;
-    });
-    console.log('[TRANSACT] Result:', { committed: result.committed, hasSnapshot: result.snapshot?.exists() });
+    }, { applyLocally: false });
+    console.log('[TRANSACT] Result:', { committed: result.committed, outcome });
     return { committed:result.committed, room:result.snapshot.exists() ? ensureRoomStructures(result.snapshot.val()) : null, outcome };
   } catch(e){
     console.error('[TRANSACT] Error:', e && e.message, e);
@@ -3461,79 +3452,102 @@ async function closeAndAdvanceAuction(action, reason='unsold', expected=null){
   if(G.advanceLock) return;
   G.advanceLock=true;
   try{
-    // FIX: Split into two operations: update auction only, then manage room state
     if(!G.room) return;
     const a = G.room.auction;
     if(!a||!a.active) return;
-    if(expected && (a.turnId!==expected.turnId || a.currentIdx!==expected.currentIdx || (expected.timerEndAt && a.timerEndAt!==expected.timerEndAt))){
-      return;
-    }
-    
+    if(expected && (a.turnId!==expected.turnId || a.currentIdx!==expected.currentIdx)) return;
+
     if(action==='auto') action = a.currentBidder ? 'sold' : 'unsold';
     const cp=G.room.players[a.currentIdx];
     if(!cp || !['pending','queued_unsold'].includes(cp.status)) return;
-    
+
+    // Load fresh room state from Firebase before writing to avoid stale data
+    const freshRoom = await loadRoom(G.roomCode);
+    if(!freshRoom) { toast('Could not load room','error'); return; }
+    ensureRoomStructures(freshRoom);
+    G.room = freshRoom;
+
+    const fa = freshRoom.auction;
+    if(!fa || !fa.active) return;
+    if(fa.currentIdx !== a.currentIdx) return; // player already changed
+
+    const fcp = freshRoom.players[fa.currentIdx];
+    if(!fcp || !['pending','queued_unsold'].includes(fcp.status)) return;
+
+    const updates = {};
+    const playerIdx = fa.currentIdx;
+    const logEntry = { createdAt: Date.now() };
+
     if(action==='sold'){
-      if(!a.currentBidderId || !a.currentBidder) {toast('No bids yet!','error');return;}
-      const mgr=G.room.managers.find(m=>m.id===a.currentBidderId);
-      if(!mgr) {toast('Winning team not found','error');return;}
+      if(!fa.currentBidderId || !fa.currentBidder){ toast('No bids yet!','error'); return; }
+      const mgrIdx = freshRoom.managers.findIndex(m=>m.id===fa.currentBidderId);
+      if(mgrIdx===-1){ toast('Winning team not found','error'); return; }
+      const mgr = freshRoom.managers[mgrIdx];
       if(!Array.isArray(mgr.squad)) mgr.squad=[];
-      const squadSize=Number(G.room.settings?.squadSize)||15;
-      if(mgr.squad.length>=squadSize) {toast(mgr.name+' already has '+squadSize+' players','error');return;}
-      if((mgr.squad||[]).some(p=>p.playerId===cp.id || (!p.playerId && p.name===cp.name))){
-        return;
-      }
-      if(a.currentBid>mgr.purse) {toast(mgr.name+' does not have enough purse','error');return;}
-      const buyer=a.currentBidder;
-      const price=a.currentBid;
-      
-      // Use room transaction to update player and manager
-      const result=await transactRoom(room=>{
-        const roomCp=room.players[a.currentIdx];
-        const roomMgr=room.managers.find(m=>m.id===a.currentBidderId);
-        if(!roomCp || !roomMgr) return { outcome:{status:'missing'} };
-        
-        roomCp.status='sold';
-        roomCp.soldTo=buyer;
-        roomCp.soldToId=a.currentBidderId;
-        roomCp.soldPrice=price;
-        roomMgr.purse=normalizeAmount(roomMgr.purse-price);
-        roomMgr.squad.push({playerId:roomCp.id,name:roomCp.name,role:roomCp.role,nation:roomCp.nation,price});
-        room.logs.push({type:'sold',text:'SOLD! '+roomCp.name+' -> '+buyer+' @ '+formatMoney(price),createdAt:Date.now()});
-        const advance=advanceAuctionState(room);
-        return { outcome:{status:'sold', playerName:roomCp.name, buyer, price, complete:advance.complete} };
-      });
-      if(result.room) G.room=result.room;
-      const o=result.outcome||{};
-      if(o.status==='sold') {
-        toast(o.playerName+' sold to '+o.buyer+' for '+formatMoney(o.price),'success');
-        if(o.complete) showWinner(G.room);
-      }
+      const squadSize = Number(freshRoom.settings?.squadSize)||15;
+      if(mgr.squad.length>=squadSize){ toast(mgr.name+' squad full','error'); return; }
+      if(mgr.squad.some(p=>p.playerId===fcp.id)){ return; } // already sold
+      if(fa.currentBid>mgr.purse){ toast(mgr.name+' not enough purse','error'); return; }
+
+      const price = fa.currentBid;
+      const buyer = fa.currentBidder;
+      const buyerId = fa.currentBidderId;
+
+      // Update player
+      const updatedPlayer = {...fcp, status:'sold', soldTo:buyer, soldToId:buyerId, soldPrice:price};
+      updates['rooms/'+G.roomCode+'/players/'+playerIdx] = updatedPlayer;
+
+      // Update manager
+      const updatedSquad = [...mgr.squad, {playerId:fcp.id,name:fcp.name,role:fcp.role,nation:fcp.nation,price}];
+      const updatedPurse = normalizeAmount(mgr.purse - price);
+      updates['rooms/'+G.roomCode+'/managers/'+mgrIdx+'/squad'] = updatedSquad;
+      updates['rooms/'+G.roomCode+'/managers/'+mgrIdx+'/purse'] = updatedPurse;
+
+      // Compute next auction state
+      freshRoom.players[playerIdx] = updatedPlayer;
+      mgr.squad = updatedSquad;
+      mgr.purse = updatedPurse;
+      const advance = advanceAuctionState(freshRoom);
+      updates['rooms/'+G.roomCode+'/auction'] = freshRoom.auction;
+
+      // Log
+      const soldLog = {type:'sold',text:'SOLD! '+fcp.name+' -> '+buyer+' @ '+formatMoney(price),createdAt:Date.now()};
+      await G.fbRunTransaction(G.fbRef(G.fbDb,'rooms/'+G.roomCode+'/logs'), cur=>{
+        const logs = Array.isArray(cur) ? cur : [];
+        logs.push(soldLog);
+        return logs.slice(-200);
+      }).catch(()=>{});
+
+      await G.fbUpdate(G.fbRef(G.fbDb), updates);
+      G.room = freshRoom;
+      toast(fcp.name+' sold to '+buyer+' for '+formatMoney(price),'success');
+      if(advance.complete) showWinner(G.room);
+
     } else {
-      // Handle unsold
-      const finalUnsold = a.unsoldRound || cp.status==='queued_unsold';
-      const result=await transactRoom(room=>{
-        const roomCp=room.players[a.currentIdx];
-        if(!roomCp) return { outcome:{status:'missing'} };
-        
-        roomCp.status=finalUnsold ? 'unsold' : 'queued_unsold';
-        if(finalUnsold){
-          room.logs.push({type:'unsold',text:'Unsold: '+roomCp.name,createdAt:Date.now()});
-        } else {
-          const label = reason==='skip' ? 'Skipped' : 'Unsold';
-          room.logs.push({type:'unsold',text:label+': '+roomCp.name+' moved to UNSOLD',createdAt:Date.now()});
-        }
-        const advance=advanceAuctionState(room);
-        return { outcome:{status:'unsold', playerName:roomCp.name, finalUnsold, complete:advance.complete} };
-      });
-      if(result.room) G.room=result.room;
-      const o=result.outcome||{};
-      if(o.status==='unsold') {
-        toast(o.finalUnsold ? o.playerName+' unsold' : o.playerName+' moved to UNSOLD','info');
-        if(o.complete) showWinner(G.room);
-      }
+      // Unsold / skip
+      const finalUnsold = fa.unsoldRound || fcp.status==='queued_unsold';
+      const newStatus = finalUnsold ? 'unsold' : 'queued_unsold';
+      const updatedPlayer = {...fcp, status:newStatus};
+      updates['rooms/'+G.roomCode+'/players/'+playerIdx] = updatedPlayer;
+
+      freshRoom.players[playerIdx] = updatedPlayer;
+      const advance = advanceAuctionState(freshRoom);
+      updates['rooms/'+G.roomCode+'/auction'] = freshRoom.auction;
+
+      const label = finalUnsold ? 'Unsold' : (reason==='skip' ? 'Skipped' : 'Unsold');
+      const unsoldLog = {type:'unsold',text:label+': '+fcp.name+(finalUnsold?'':' moved to UNSOLD'),createdAt:Date.now()};
+      await G.fbRunTransaction(G.fbRef(G.fbDb,'rooms/'+G.roomCode+'/logs'), cur=>{
+        const logs = Array.isArray(cur) ? cur : [];
+        logs.push(unsoldLog);
+        return logs.slice(-200);
+      }).catch(()=>{});
+
+      await G.fbUpdate(G.fbRef(G.fbDb), updates);
+      G.room = freshRoom;
+      toast(finalUnsold ? fcp.name+' unsold' : fcp.name+' moved to UNSOLD','info');
+      if(advance.complete) showWinner(G.room);
     }
-    
+
     if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
     lastAuctionRenderKey='';
     renderAuction();
@@ -3705,16 +3719,8 @@ async function pingLatencyOnce(){
         ok = snap && snap.exists(); // if we got a value, we're online
       } catch(e){ ok = false; }
     }
-    // Fallback: ping a CDN that allows CORS HEAD requests
-    if(!ok){
-      const controller = new AbortController();
-      const to = setTimeout(()=>controller.abort(), 2000);
-      try{
-        await fetch('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js', { method:'HEAD', cache:'no-store', mode:'no-cors', signal: controller.signal });
-        ok = true;
-      } catch(e){ ok = false; }
-      clearTimeout(to);
-    }
+    // No favicon fallback — it causes 404 spam on GitHub Pages.
+    // Firebase serverTimeOffset read above is sufficient for latency measurement.
   }catch(e){ ok=false; }
   const ms = Date.now()-start;
   // smoothing: exponential moving average
