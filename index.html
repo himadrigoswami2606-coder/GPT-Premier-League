@@ -1394,6 +1394,14 @@ function init(){
   renderNavUser();
   syncAuthInputs();
 
+  // If this page is opened via file:// origin, Firebase realtime and fetch probes won't work.
+  if(location && location.protocol === 'file:'){
+    console.warn('[INIT] Running from file:// — Firebase and network probes may not work. Serve via HTTP.');
+    toast('Running from file:// — serve this page via a local HTTP server for realtime features','error');
+    // show a persistent latency hint
+    updateLatencyUI('serve', 0);
+  }
+
   // Load saved config
   const saved = localStorage.getItem('fb_config');
   if(saved && !G.fbReady){
@@ -1755,6 +1763,11 @@ function firebaseRoomStateReady(){
 
 function requireFirebaseRoomState(){
   if(firebaseRoomStateReady()) return true;
+  if(location && location.protocol === 'file:'){
+    toast('This page is served via file:// — serve it using a local HTTP server for Firebase features. Try `python -m http.server` or `npx http-server` in the folder.','error');
+    showPage('firebase');
+    return false;
+  }
   toast('Connect Firebase to create or join rooms','error');
   showPage('firebase');
   return false;
@@ -3716,6 +3729,11 @@ function toast(msg,type='info'){
 G.latencyMs = null;
 G.latencyIntervalId = null;
 async function pingLatencyOnce(){
+  // If served from file://, network probes and Firebase won't work reliably
+  if(location && location.protocol === 'file:'){
+    updateLatencyUI('serve', 0);
+    return { ok:'serve', ms: null };
+  }
   const start = Date.now();
   let ok=false;
   try{
@@ -3745,6 +3763,12 @@ function updateLatencyUI(ok, ms){
   const dot = el.querySelector('.dot');
   // Normalize classes: ensure id stays and manage status classes via classList
   el.classList.remove('badge-ghost','green','amber','red');
+  if(ok === 'serve'){
+    el.classList.add('badge-ghost');
+    text.textContent = 'Serve via HTTP for realtime';
+    if(dot) dot.style.background='var(--amber)';
+    return;
+  }
   if(!ok){
     el.classList.add('badge-ghost');
     text.textContent = 'Latency: offline';
