@@ -58,6 +58,13 @@ window._fb = { db, ref, set, get, update, onValue, push, serverTimestamp, runTra
   --font-display:'Instrument Serif',serif;
   --font-body:'Syne',sans-serif;
 }
+/* Light theme overrides applied when <body> has .light */
+body.light{
+  --bg:#f7faf7; --s1:#ffffff; --s2:#f6f7f6; --s3:#f0f2ef; --s4:#eef0ec;
+  --bd:#e6e9e6; --bd2:#dde6dd;
+  --t1:#0b0f0b; --t2:#3b4a3b; --t3:#6b7a6b;
+  --red:#ef4444; --amber:#f59e0b; --blue:#0ea5e9; --purple:#7c3aed;
+}
 html{scroll-behavior:smooth;-webkit-tap-highlight-color:transparent}
 body{background:var(--bg);color:var(--t1);font-family:var(--font-body);font-size:14px;line-height:1.5;min-height:100vh;overflow-x:hidden}
 input,textarea,select,button{font-family:inherit;font-size:inherit}
@@ -112,6 +119,13 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .badge-blue{background:rgba(56,189,248,.12);color:var(--blue);border:1px solid rgba(56,189,248,.2)}
 .badge-purple{background:rgba(167,139,250,.12);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
 .badge-ghost{background:var(--s3);color:var(--t2);border:1px solid var(--bd2)}
+
+/* LATENCY BADGE */
+#latency-badge{position:fixed;left:16px;bottom:84px;z-index:950;padding:8px 12px;border-radius:12px;background:rgba(12,15,12,.9);backdrop-filter:blur(6px);font-size:.82rem;display:flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.03)}
+#latency-badge .dot{width:10px;height:10px;border-radius:50%}
+#latency-badge.green{color:var(--gl);border-color:rgba(34,197,94,.12)}
+#latency-badge.amber{color:var(--amber);border-color:rgba(245,158,11,.12)}
+#latency-badge.red{color:var(--red);border-color:rgba(244,63,94,.12)}
 
 /* ═══════════════════════ NAV ═══════════════════════ */
 #topnav{position:fixed;top:0;left:0;right:0;z-index:500;height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:rgba(7,9,9,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--bd)}
@@ -857,6 +871,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     <span>CricAuction Pro</span>
   </div>
   <div class="nav-right" id="nav-right">
+    <button id="theme-toggle" class="btn btn-ghost btn-sm" title="Toggle theme" onclick="toggleTheme()">🌙</button>
     <button class="btn btn-outline btn-sm" onclick="handleEntryAction()">Join / Create</button>
   </div>
 </nav>
@@ -1244,6 +1259,10 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 </div>
 
 <div id="toasts"></div>
+<div id="latency-badge" class="badge-ghost">
+  <div class="dot" style="background:var(--t2)"></div>
+  <div id="latency-text" class="small">Latency: -- ms</div>
+</div>
 
 <!-- ════════ MAIN SCRIPT ════════ -->
 <script>
@@ -1394,6 +1413,9 @@ function init(){
 
   renderIPLTeamButtons();
   wireRealtimeInputs();
+  // start periodic latency monitoring for UI indicator
+  try{ startLatencyMonitor(); }catch(e){}
+  try{ initTheme(); }catch(e){}
 }
 
 function wireRealtimeInputs(){
@@ -3235,37 +3257,105 @@ async function doBid(amount, sourceBtn=null){
     const localAuction=room.auction||{};
     const cp=room.players[localAuction.currentIdx];
     if(!cp || !['pending','queued_unsold'].includes(cp.status)){ toast('Bidding is closed for this player','error'); finishBid(); return; }
-    const result=await transactAuction(a=>{
-      if(!a||!a.active) return { outcome:{status:'inactive'} };
-      if(a.paused) return { outcome:{status:'paused'} };
-      if(a.currentIdx!==localAuction.currentIdx || a.turnId!==localAuction.turnId) return { outcome:{status:'stale'} };
-      if(!cp || !['pending','queued_unsold'].includes(cp.status)) return { outcome:{status:'closed'} };
-      const minBid=normalizeAmount(a.currentBid + (a.currentBidder ? MIN_BID_INCREMENT : 0));
-      if(bid<minBid) return { outcome:{status:'low', minBid} };
-      if(bid>normalizeAmount(myM.purse)) return { outcome:{status:'purse', purse:normalizeAmount(myM.purse)} };
+    // Telemetry counters
+    if(!G.telemetry) G.telemetry={txTotal:0,txCommitted:0,txFailed:0};
+
+    // Save previous auction state to allow revert on failure
+    const prevAuction = room.auction ? JSON.parse(JSON.stringify(room.auction)) : null;
+
+    // Optimistic UI update so the bid feels instant
+    try{
+      if(!room.auction) room.auction={};
+      room.auction.currentBid=bid;
+      room.auction.currentBidder=myM.name;
+      room.auction.currentBidderId=myM.id;
       const now=Date.now();
-      a.currentBid=bid;
-      a.currentBidder=myM.name;
-      a.currentBidderId=myM.id;
-      a.timerStart=now;
-      a.timerEndAt=now+roomTimerMs(room);
-      a.turnId=cp.id+'-'+a.timerStart;
-      return { outcome:{status:'ok'} };
-    });
-    if(result.auction) G.room.auction=result.auction;
-    const o=result.outcome||{};
-    if(o.status==='inactive') toast('Auction not active','error');
-    else if(o.status==='paused') toast('Auction is paused','info');
-    else if(o.status==='stale') toast('Bid was too late for that turn','info');
-    else if(o.status==='not-manager') toast('You are not in this room','error');
-    else if(o.status==='squad-full') toast('Squad limit reached: '+o.squadSize+' players','error');
-    else if(o.status==='low') toast('Must bid at least '+formatMoney(o.minBid),'error');
-    else if(o.status==='purse') toast('Not enough purse! You have '+formatMoney(o.purse),'error');
-    else if(o.status==='ok'){
-      document.getElementById('custom-bid').value='';
-      renderBidState();
-      renderTimer();
-      appendLog('bid','Bid: '+myM.name+' -> '+formatMoney(bid)+' ('+cp.name+')');
+      room.auction.timerStart=now;
+      room.auction.timerEndAt=now+roomTimerMs(room);
+      room.auction.turnId = (cp?cp.id:'')+'-'+room.auction.timerStart;
+    } catch(e){/* ignore */}
+    renderBidState(); renderTimer();
+
+    // Try the transaction with a couple of retries/backoff
+    let result=null; let success=false;
+    const maxAttempts=3;
+    for(let attempt=1; attempt<=maxAttempts; attempt++){
+      G.telemetry.txTotal++;
+      result = await transactAuction(a=>{
+        if(!a||!a.active) return { outcome:{status:'inactive'} };
+        if(a.paused) return { outcome:{status:'paused'} };
+        if(a.currentIdx!==localAuction.currentIdx || a.turnId!==localAuction.turnId) return { outcome:{status:'stale'} };
+        if(!cp || !['pending','queued_unsold'].includes(cp.status)) return { outcome:{status:'closed'} };
+        const minBid=normalizeAmount(a.currentBid + (a.currentBidder ? MIN_BID_INCREMENT : 0));
+        if(bid<minBid) return { outcome:{status:'low', minBid} };
+        if(bid>normalizeAmount(myM.purse)) return { outcome:{status:'purse', purse:normalizeAmount(myM.purse)} };
+        const now=Date.now();
+        a.currentBid=bid;
+        a.currentBidder=myM.name;
+        a.currentBidderId=myM.id;
+        a.timerStart=now;
+        a.timerEndAt=now+roomTimerMs(room);
+        a.turnId=cp.id+'-'+a.timerStart;
+        return { outcome:{status:'ok'} };
+      });
+
+      if(result && result.committed){ G.telemetry.txCommitted++; }
+      else { G.telemetry.txFailed++; }
+
+      // If committed and we have an auction snapshot, apply and finish
+      const o=result?.outcome||{};
+      if(result && result.committed && o.status==='ok'){
+        if(result.auction) G.room.auction=result.auction;
+        renderBidState(); renderTimer();
+        appendLog('bid','Bid: '+myM.name+' -> '+formatMoney(bid)+' ('+ (cp?cp.name:'unknown') +')');
+        success=true; break;
+      }
+
+      // Non-ok outcomes (inactive/paused/low/purse/closed/stale) should not be retried
+      if(o.status && ['inactive','paused','low','purse','closed'].includes(o.status)){
+        if(result.auction) G.room.auction=result.auction;
+        // show message and stop retrying
+        if(o.status==='inactive') toast('Auction not active','error');
+        else if(o.status==='paused') toast('Auction is paused','info');
+        else if(o.status==='low') toast('Must bid at least '+formatMoney(o.minBid),'error');
+        else if(o.status==='purse') toast('Not enough purse! You have '+formatMoney(o.purse),'error');
+        else if(o.status==='closed') toast('Bidding is closed for this player','error');
+        break;
+      }
+
+      // If this was a stale or commit-false, retry with backoff
+      if(attempt<maxAttempts){
+        // adaptive backoff: increase with observed failures to reduce contention
+        const failCount = (G.telemetry && G.telemetry.txFailed) ? G.telemetry.txFailed : 0;
+        const base = 60;
+        const adaptive = Math.min(1000, failCount * 40);
+        const jitter = Math.floor(Math.random()*200);
+        const backoff = base + adaptive + jitter;
+        await new Promise(r=>setTimeout(r, backoff));
+        // refresh local copy of room/auction to be in sync for next attempt
+        try{ await loadRoom(room.code); }catch(e){}
+        continue;
+      }
+    }
+
+    if(success){
+      // If host, immediately close/assign this player and advance the auction
+      try{
+        if(G.isHost){
+          const a = G.room && G.room.auction;
+          if(a && a.turnId && typeof a.currentIdx === 'number'){
+            await closeAndAdvanceAuction('sold','bid-win',{turnId:a.turnId, currentIdx:a.currentIdx});
+          }
+        }
+      } catch(e){ console.warn('Auto-advance after bid failed', e); }
+    }
+
+    if(!success){
+      // Final failure: revert to authoritative state if available, otherwise to prevAuction
+      if(result && result.auction) G.room.auction=result.auction;
+      else if(prevAuction) G.room.auction=prevAuction;
+      renderBidState(); renderTimer();
+      if(!result || !result.committed) toast('Bid did not go through. Try again.','error');
     }
   } catch(e){
     console.warn('Bid transaction failed', e);
@@ -3561,6 +3651,106 @@ function toast(msg,type='info'){
   c.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(10px)';t.style.transition='all .25s';setTimeout(()=>t.remove(),260);},3000);
 }
+
+// ── LATENCY MONITOR ───────────────────────────────────
+G.latencyMs = null;
+G.latencyIntervalId = null;
+async function pingLatencyOnce(){
+  const start = Date.now();
+  let ok=false;
+  try{
+    if(G.fbGet && G.fbRef && G.fbDb){
+      await G.fbGet(G.fbRef(G.fbDb,'.info/connected'));
+      ok=true;
+    } else {
+      // fallback to a light external probe
+      await fetch('https://www.google.com/generate_204', {mode:'no-cors'});
+      ok=true;
+    }
+  }catch(e){ ok=false; }
+  const ms = Date.now()-start;
+  // smoothing: exponential moving average
+  if(typeof G.latencyMs !== 'number') G.latencyMs = ms;
+  else G.latencyMs = Math.round(G.latencyMs*0.6 + ms*0.4);
+  updateLatencyUI(ok, G.latencyMs);
+  return { ok, ms: G.latencyMs };
+}
+
+function updateLatencyUI(ok, ms){
+  const el = document.getElementById('latency-badge');
+  const text = document.getElementById('latency-text');
+  if(!el || !text) return;
+  const dot = el.querySelector('.dot');
+  if(!ok){ el.className='badge-ghost'; text.textContent = 'Latency: offline'; if(dot) dot.style.background='var(--t3)'; return; }
+  text.textContent = 'Latency: '+ms+' ms';
+  if(ms<60){ el.className='green'; if(dot) dot.style.background='var(--gl)'; }
+  else if(ms<150){ el.className='amber'; if(dot) dot.style.background='var(--amber)'; }
+  else { el.className='red'; if(dot) dot.style.background='var(--red)'; }
+}
+
+function startLatencyMonitor(){
+  if(G.latencyIntervalId) return;
+  // initial ping
+  pingLatencyOnce().catch(()=>{});
+  G.latencyIntervalId = setInterval(()=>{ pingLatencyOnce().catch(()=>{}); }, 4000);
+}
+
+function stopLatencyMonitor(){ if(G.latencyIntervalId){ clearInterval(G.latencyIntervalId); G.latencyIntervalId=null; } }
+
+// ── THEME TOGGLE ──────────────────────────────────────
+function applyThemeClass(mode){
+  const body = document.body;
+  if(mode==='light') body.classList.add('light');
+  else body.classList.remove('light');
+  const btn = document.getElementById('theme-toggle');
+  if(btn) btn.textContent = (mode==='light' ? '☀️' : '🌙');
+}
+
+function initTheme(){
+  try{
+    const saved = localStorage.getItem('theme');
+    if(saved==='light' || saved==='dark'){ applyThemeClass(saved); return; }
+    // default: respect prefers-color-scheme
+    const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+    applyThemeClass(prefersLight ? 'light' : 'dark');
+  }catch(e){}
+}
+
+function toggleTheme(){
+  try{
+    const isLight = document.body.classList.contains('light');
+    const next = isLight ? 'dark' : 'light';
+    applyThemeClass(next);
+    localStorage.setItem('theme', next);
+  }catch(e){console.warn('Theme toggle failed', e)}
+}
+
+// Local stress-test helper to simulate many bids from managers in this room.
+// Usage from console: G.localStressTest({rounds:20, intervalMs:40, amount:1})
+G.localStressTest = async function(opts={}){
+  const rounds = opts.rounds || 20;
+  const interval = opts.intervalMs || 50;
+  const amount = typeof opts.amount === 'number' ? opts.amount : null;
+  if(!G.room) throw new Error('No room loaded');
+  const mgrs = (G.room.managers||[]).slice();
+  if(!mgrs.length) throw new Error('No managers in room to simulate');
+  const origId = G.myId; const origName = G.myName;
+  try{
+    for(let r=0;r<rounds;r++){
+      // dispatch bids in parallel for this round
+      await Promise.all(mgrs.map(async m=>{
+        try{
+          G.myId = m.id; G.myName = m.name;
+          const bidAmt = amount || Math.min(normalizeAmount(m.purse||0), normalizeAmount((G.room.auction?.currentBid||0) + (G.room.auction?.currentBidder ? MIN_BID_INCREMENT : 0) || 1));
+          await doBid(bidAmt).catch(()=>{});
+        }catch(e){}
+      }));
+      await new Promise(r=>setTimeout(r, interval));
+    }
+  } finally {
+    G.myId = origId; G.myName = origName;
+  }
+};
 
 </script>
 </body>
