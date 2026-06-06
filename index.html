@@ -3338,7 +3338,7 @@ async function doBid(amount, sourceBtn=null){
         const backoff = base + adaptive + jitter;
         await new Promise(r=>setTimeout(r, backoff));
         // refresh local copy of room/auction to be in sync for next attempt
-        try{ await loadRoom(room.code); }catch(e){}
+        try{ const fresh = await loadRoom(room.code); if(fresh) { G.room = fresh; room = G.room; } }catch(e){}
         continue;
       }
     }
@@ -3665,12 +3665,22 @@ async function pingLatencyOnce(){
   let ok=false;
   try{
     if(G.fbGet && G.fbRef && G.fbDb){
-      await G.fbGet(G.fbRef(G.fbDb,'.info/connected'));
-      ok=true;
-    } else {
-      // fallback to a light external probe
-      await fetch('https://www.google.com/generate_204', {mode:'no-cors'});
-      ok=true;
+      // Prefer Firebase connection probe when DB is configured
+      try{
+        const snap = await G.fbGet(G.fbRef(G.fbDb,'.info/connected'));
+        ok = !!(snap && snap.exists() && snap.val());
+      } catch(e){ ok = false; }
+    }
+    // If firebase probe not available or returned false, try a same-origin HEAD probe with timeout
+    if(!ok){
+      const controller = new AbortController();
+      const to = setTimeout(()=>controller.abort(), 1800);
+      try{
+        // HEAD to same origin resource is reliable and avoids CORS issues
+        await fetch(window.location.origin + '/favicon.ico', { method:'HEAD', cache:'no-store', signal: controller.signal });
+        ok = true;
+      } catch(e){ ok = false; }
+      clearTimeout(to);
     }
   }catch(e){ ok=false; }
   const ms = Date.now()-start;
@@ -3686,11 +3696,18 @@ function updateLatencyUI(ok, ms){
   const text = document.getElementById('latency-text');
   if(!el || !text) return;
   const dot = el.querySelector('.dot');
-  if(!ok){ el.className='badge-ghost'; text.textContent = 'Latency: offline'; if(dot) dot.style.background='var(--t3)'; return; }
+  // Normalize classes: ensure id stays and manage status classes via classList
+  el.classList.remove('badge-ghost','green','amber','red');
+  if(!ok){
+    el.classList.add('badge-ghost');
+    text.textContent = 'Latency: offline';
+    if(dot) dot.style.background='var(--t3)';
+    return;
+  }
   text.textContent = 'Latency: '+ms+' ms';
-  if(ms<60){ el.className='green'; if(dot) dot.style.background='var(--gl)'; }
-  else if(ms<150){ el.className='amber'; if(dot) dot.style.background='var(--amber)'; }
-  else { el.className='red'; if(dot) dot.style.background='var(--red)'; }
+  if(ms<60){ el.classList.add('green'); if(dot) dot.style.background='var(--gl)'; }
+  else if(ms<150){ el.classList.add('amber'); if(dot) dot.style.background='var(--amber)'; }
+  else { el.classList.add('red'); if(dot) dot.style.background='var(--red)'; }
 }
 
 function startLatencyMonitor(){
