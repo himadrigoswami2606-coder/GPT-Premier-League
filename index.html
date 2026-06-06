@@ -1754,8 +1754,11 @@ async function transactRoom(updateFn){
     } catch(psErr){
       console.warn('[TRANSACT] Could not read pre-snapshot for diagnostics', psErr);
     }
+    console.log('[TRANSACT] path =', path);
 
     const result = await G.fbRunTransaction(G.fbRef(G.fbDb, path), current=>{
+      console.log('[TRANSACT] current value:', current);
+      console.log('[TRANSACT] typeof current:', typeof current);
       if(!current){
         outcome = { status:'missing' };
         console.warn('[TRANSACT] Room missing during transaction for path:', path, 'roomCode:', G.roomCode);
