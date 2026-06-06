@@ -3198,14 +3198,23 @@ function updateTimer(room){
     lastTimerRoom='';
     return;
   }
-  if(!a.timerEndAt && a.timerStart) a.timerEndAt = a.timerStart + (a.timerDurMs || roomTimerMs(room));
+  if(!a.timerEndAt && a.timerStart) {
+    try{
+      a.timerEndAt = Number(a.timerStart) + (Number(a.timerDurMs) || roomTimerMs(room));
+    }catch(e){ a.timerEndAt = null; }
+  }
   const key=room.code+'-'+a.currentIdx+'-'+(a.timerEndAt||0)+'-'+(a.turnId||'');
   if(lastTimerRoom===key) return;
   lastTimerRoom=key;
   if(G.timerInterval) clearInterval(G.timerInterval);
   const dur=roomTimerMs(room);
   function tick(){
-    const endAt = a.timerEndAt || (a.timerStart ? (a.timerStart + (a.timerDurMs || roomTimerMs(room))) : Date.now());
+    let endAt = a.timerEndAt || (a.timerStart ? (Number(a.timerStart) + (Number(a.timerDurMs) || roomTimerMs(room))) : Date.now());
+    if(!Number.isFinite(endAt)){
+      console.warn('[TIMER] invalid endAt, auction:', a);
+      // fallback: give a small buffer so UI doesn't immediately expire
+      endAt = Date.now() + (Number(a.timerDurMs) || roomTimerMs(room));
+    }
     const remainingMs=Math.max(0, endAt - Date.now());
     const rem=Math.max(0,Math.ceil(remainingMs/1000));
     const totalDur = (a.timerDurMs || dur);
@@ -3265,8 +3274,11 @@ async function doBid(amount, sourceBtn=null){
     // Save previous auction state to allow revert on failure
     const prevAuction = room.auction ? JSON.parse(JSON.stringify(room.auction)) : null;
 
+    // Capture the REAL current turnId BEFORE any optimistic update — this is what Firebase has
+    const realCurrentTurnId = localAuction.turnId;
+    const realCurrentIdx = localAuction.currentIdx;
+
     // Optimistic UI update so the bid feels instant
-    // Use a generated turnId (not timestamp-based) so clients can compare reliably
     const optimisticTurnId = (cp?cp.id:'') + '-' + genId();
     try{
       if(!room.auction) room.auction={};
@@ -3275,7 +3287,7 @@ async function doBid(amount, sourceBtn=null){
       room.auction.currentBidderId=myM.id;
       // optimistic timer values use local clock but server will set authoritative timerStart
       room.auction.timerDurMs = roomTimerMs(room);
-      room.auction.turnId = optimisticTurnId;
+      // NOTE: Do NOT update turnId optimistically — the stale check compares against Firebase value
     } catch(e){/* ignore */}
     renderBidState(); renderTimer();
 
@@ -3283,10 +3295,8 @@ async function doBid(amount, sourceBtn=null){
     let result=null; let success=false;
     const maxAttempts=3;
     for(let attempt=1; attempt<=maxAttempts; attempt++){
-      // Ensure we operate on latest room/auction state before each attempt
-      room = G.room;
-      localAuction = room?.auction || {};
-      cp = room?.players?.[localAuction.currentIdx];
+      // Debug: log attempt context
+      try{ console.debug('[BID] attempt', attempt, { roomCode: room.code, currentIdx: realCurrentIdx, realCurrentTurnId, optimisticTurnId, myId: myM.id, bid }); }catch(e){}
 
       G.telemetry.txTotal++;
       // Capture the intended turnId for this transact so server writes it verbatim
@@ -3294,7 +3304,10 @@ async function doBid(amount, sourceBtn=null){
       result = await transactAuction(a=>{
         if(!a||!a.active) return { outcome:{status:'inactive'} };
         if(a.paused) return { outcome:{status:'paused'} };
-        if(a.currentIdx!==localAuction.currentIdx || a.turnId!==localAuction.turnId) return { outcome:{status:'stale'} };
+        // Compare against realCurrentIdx/realCurrentTurnId (pre-optimistic), not the live G.room values
+        if(a.currentIdx!==realCurrentIdx) return { outcome:{status:'stale'} };
+        // turnId check: allow if both undefined/null (first bid ever) OR if they match
+        if(realCurrentTurnId !== undefined && realCurrentTurnId !== null && realCurrentTurnId !== '' && a.turnId !== realCurrentTurnId) return { outcome:{status:'stale'} };
         if(!cp || !['pending','queued_unsold'].includes(cp.status)) return { outcome:{status:'closed'} };
         const minBid=normalizeAmount(a.currentBid + (a.currentBidder ? MIN_BID_INCREMENT : 0));
         if(bid<minBid) return { outcome:{status:'low', minBid} };
@@ -3330,42 +3343,44 @@ async function doBid(amount, sourceBtn=null){
         else if(o.status==='low') toast('Must bid at least '+formatMoney(o.minBid),'error');
         else if(o.status==='purse') toast('Not enough purse! You have '+formatMoney(o.purse),'error');
         else if(o.status==='closed') toast('Bidding is closed for this player','error');
+        // debug outcome
+        console.warn('[BID] non-retriable outcome', o, result);
         break;
       }
 
       // If this was a stale or commit-false, retry with backoff
       if(attempt<maxAttempts){
-        // adaptive backoff: increase with observed failures to reduce contention
         const failCount = (G.telemetry && G.telemetry.txFailed) ? G.telemetry.txFailed : 0;
         const base = 60;
         const adaptive = Math.min(1000, failCount * 40);
         const jitter = Math.floor(Math.random()*200);
         const backoff = base + adaptive + jitter;
         await new Promise(r=>setTimeout(r, backoff));
-        // refresh local copy of room/auction to be in sync for next attempt
-        try{ const fresh = await loadRoom(room.code); if(fresh) { G.room = fresh; room = G.room; } }catch(e){}
+        // refresh room from Firebase for diagnostics, but keep realCurrentTurnId/realCurrentIdx
+        // which represent the state we started the bid from — don't change those
+        try{ const fresh = await loadRoom(room.code); if(fresh) { G.room = fresh; console.debug('[BID] refreshed room for retry'); } }catch(e){ console.warn('[BID] loadRoom failed during backoff', e); }
         continue;
       }
     }
-
-    if(success){
-      // If host, immediately close/assign this player and advance the auction
-      try{
-        if(G.isHost){
-          const a = G.room && G.room.auction;
-          if(a && a.turnId && typeof a.currentIdx === 'number'){
-            await closeAndAdvanceAuction('sold','bid-win',{turnId:a.turnId, currentIdx:a.currentIdx});
-          }
-        }
-      } catch(e){ console.warn('Auto-advance after bid failed', e); }
+    // After attempts, if still not success, log final outcome for diagnostics
+    if(!success){
+      console.warn('[BID] final result', { result, G_room:G.room, attempt:maxAttempts });
+      if(result && result.outcome){
+        const o=result.outcome;
+        if(o.status==='stale') toast('Bid not placed: auction state changed. Try again.','error');
+        else toast('Bid failed: '+(o.status||'unknown'),'error');
+      }
     }
+
+    // NOTE: Host does NOT auto-close after bidding. The timer must run out
+    // (or host manually clicks Sold/Skip) so all participants see the leading bid.
 
     if(!success){
       // Final failure: revert to authoritative state if available, otherwise to prevAuction
       if(result && result.auction) G.room.auction=result.auction;
       else if(prevAuction) G.room.auction=prevAuction;
       renderBidState(); renderTimer();
-      if(!result || !result.committed) toast('Bid did not go through. Try again.','error');
+      if(!result || !result.committed) toast('Bid did not go through. Please try again.','error');
     }
   } catch(e){
     console.warn('Bid transaction failed', e);
@@ -3671,19 +3686,19 @@ async function pingLatencyOnce(){
   let ok=false;
   try{
     if(G.fbGet && G.fbRef && G.fbDb){
-      // Prefer Firebase connection probe when DB is configured
+      // Use serverTimeOffset: a real round-trip to Firebase that always works
+      // unlike .info/connected which only reflects the persistent socket state
       try{
-        const snap = await G.fbGet(G.fbRef(G.fbDb,'.info/connected'));
-        ok = !!(snap && snap.exists() && snap.val());
+        const snap = await G.fbGet(G.fbRef(G.fbDb,'.info/serverTimeOffset'));
+        ok = snap && snap.exists(); // if we got a value, we're online
       } catch(e){ ok = false; }
     }
-    // If firebase probe not available or returned false, try a same-origin HEAD probe with timeout
+    // Fallback: ping a CDN that allows CORS HEAD requests
     if(!ok){
       const controller = new AbortController();
-      const to = setTimeout(()=>controller.abort(), 1800);
+      const to = setTimeout(()=>controller.abort(), 2000);
       try{
-        // HEAD to same origin resource is reliable and avoids CORS issues
-        await fetch(window.location.origin + '/favicon.ico', { method:'HEAD', cache:'no-store', signal: controller.signal });
+        await fetch('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js', { method:'HEAD', cache:'no-store', mode:'no-cors', signal: controller.signal });
         ok = true;
       } catch(e){ ok = false; }
       clearTimeout(to);
