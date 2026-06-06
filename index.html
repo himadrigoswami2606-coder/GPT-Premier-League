@@ -3258,62 +3258,54 @@ async function doBid(amount, sourceBtn=null){
     if(!Array.isArray(myM.squad)) myM.squad=[];
     const squadSize=Number(room.settings?.squadSize)||15;
     if(myM.squad.length>=squadSize){ toast('Squad limit reached: '+squadSize+' players','error'); finishBid(); return; }
-    const localAuction=room.auction||{};
-    const cp=room.players[localAuction.currentIdx];
+    // Use let so retry loop can refresh these from latest room state
+    let localAuction = room.auction || {};
+    let cp = room.players[localAuction.currentIdx];
     if(!cp || !['pending','queued_unsold'].includes(cp.status)){ toast('Bidding is closed for this player','error'); finishBid(); return; }
-    // Telemetry counters
+
     if(!G.telemetry) G.telemetry={txTotal:0,txCommitted:0,txFailed:0};
 
     // Save previous auction state to allow revert on failure
     const prevAuction = room.auction ? JSON.parse(JSON.stringify(room.auction)) : null;
 
-    // Capture the REAL current turnId BEFORE any optimistic update — this is what Firebase has
-    const realCurrentTurnId = localAuction.turnId;
+    // Capture the REAL Firebase turnId and idx BEFORE any optimistic update
+    const realCurrentTurnId = localAuction.turnId || '';
     const realCurrentIdx = localAuction.currentIdx;
 
-    // Optimistic UI update so the bid feels instant
-    const optimisticTurnId = (cp?cp.id:'') + '-' + genId();
+    // Optimistic UI — makes bid feel instant on the bidder's screen
+    const optimisticTurnId = (cp ? cp.id : '') + '-' + genId();
     try{
-      if(!room.auction) room.auction={};
-      room.auction.currentBid=bid;
-      room.auction.currentBidder=myM.name;
-      room.auction.currentBidderId=myM.id;
-      // optimistic timer values use local clock but server will set authoritative timerStart
+      if(!room.auction) room.auction = {};
+      room.auction.currentBid = bid;
+      room.auction.currentBidder = myM.name;
+      room.auction.currentBidderId = myM.id;
       room.auction.timerDurMs = roomTimerMs(room);
-      // NOTE: Do NOT update turnId optimistically — the stale check compares against Firebase value
     } catch(e){/* ignore */}
     renderBidState(); renderTimer();
 
-    // Try the transaction with a couple of retries/backoff
-    let result=null; let success=false;
-    const maxAttempts=3;
-    for(let attempt=1; attempt<=maxAttempts; attempt++){
-      // Debug: log attempt context
-      try{ console.debug('[BID] attempt', attempt, { roomCode: room.code, currentIdx: realCurrentIdx, realCurrentTurnId, optimisticTurnId, myId: myM.id, bid }); }catch(e){}
-
+    let result = null; let success = false;
+    const maxAttempts = 3;
+    for(let attempt = 1; attempt <= maxAttempts; attempt++){
       G.telemetry.txTotal++;
-      // Capture the intended turnId for this transact so server writes it verbatim
       const txnTurnId = optimisticTurnId;
+
       result = await transactAuction(a=>{
-        if(!a||!a.active) return { outcome:{status:'inactive'} };
+        if(!a || !a.active) return { outcome:{status:'inactive'} };
         if(a.paused) return { outcome:{status:'paused'} };
-        // Compare currentIdx first - if player changed, definitely stale
-        if(a.currentIdx!==realCurrentIdx) return { outcome:{status:'stale'} };
-        // turnId check: skip if either side has no real turnId (brand new player slot)
-        // Only enforce when BOTH sides have a real turnId AND they differ
+        if(a.currentIdx !== realCurrentIdx) return { outcome:{status:'stale'} };
+        // Only enforce turnId match when both sides have one
         const fbTurnId = a.turnId || '';
-        const myTurnId = realCurrentTurnId || '';
-        if(fbTurnId && myTurnId && fbTurnId !== myTurnId) return { outcome:{status:'stale'} };
-        if(!cp || !['pending','queued_unsold'].includes(cp.status)) return { outcome:{status:'closed'} };
-        const minBid=normalizeAmount(a.currentBid + (a.currentBidder ? MIN_BID_INCREMENT : 0));
-        if(bid<minBid) return { outcome:{status:'low', minBid} };
-        if(bid>normalizeAmount(myM.purse)) return { outcome:{status:'purse', purse:normalizeAmount(myM.purse)} };
-        a.currentBid=bid;
-        a.currentBidder=myM.name;
-        a.currentBidderId=myM.id;
-        // Always use Date.now() — serverTimestamp() returns a sentinel object
-        // that becomes NaN when read back locally, breaking the timer
+        if(fbTurnId && realCurrentTurnId && fbTurnId !== realCurrentTurnId) return { outcome:{status:'stale'} };
+        // Re-read cp from Firebase auction state index to avoid stale closure
+        const liveCp = G.room && G.room.players ? G.room.players[a.currentIdx] : cp;
+        if(!liveCp || !['pending','queued_unsold'].includes(liveCp.status)) return { outcome:{status:'closed'} };
+        const minBid = normalizeAmount(a.currentBid + (a.currentBidder ? MIN_BID_INCREMENT : 0));
+        if(bid < minBid) return { outcome:{status:'low', minBid} };
+        if(bid > normalizeAmount(myM.purse)) return { outcome:{status:'purse', purse:normalizeAmount(myM.purse)} };
         const now = Date.now();
+        a.currentBid = bid;
+        a.currentBidder = myM.name;
+        a.currentBidderId = myM.id;
         a.timerStart = now;
         a.timerDurMs = roomTimerMs(room);
         a.timerEndAt = now + roomTimerMs(room);
@@ -3321,43 +3313,39 @@ async function doBid(amount, sourceBtn=null){
         return { outcome:{status:'ok'} };
       });
 
-      if(result && result.committed){ G.telemetry.txCommitted++; }
-      else { G.telemetry.txFailed++; }
+      if(result && result.committed) G.telemetry.txCommitted++;
+      else G.telemetry.txFailed++;
 
-      // If committed and we have an auction snapshot, apply and finish
-      const o=result?.outcome||{};
-      if(result && result.committed && o.status==='ok'){
-        if(result.auction) G.room.auction=result.auction;
+      const o = result?.outcome || {};
+      if(result && result.committed && o.status === 'ok'){
+        if(result.auction) G.room.auction = result.auction;
         renderBidState(); renderTimer();
-        appendLog('bid','Bid: '+myM.name+' -> '+formatMoney(bid)+' ('+ (cp?cp.name:'unknown') +')');
-        success=true; break;
+        appendLog('bid', 'Bid: '+myM.name+' -> '+formatMoney(bid)+' ('+(cp ? cp.name : 'unknown')+')');
+        success = true; break;
       }
 
-      // Non-ok outcomes (inactive/paused/low/purse/closed) should not be retried
+      // Terminal outcomes — don't retry
       if(o.status && ['inactive','paused','low','purse','closed'].includes(o.status)){
-        if(result.auction) G.room.auction=result.auction;
-        // show message and stop retrying
+        if(result && result.auction) G.room.auction = result.auction;
         if(o.status==='inactive') toast('Auction not active','error');
         else if(o.status==='paused') toast('Auction is paused','info');
-        else if(o.status==='low') toast('Must bid at least '+formatMoney(o.minBid),'error');
+        else if(o.status==='low') toast('Minimum bid is '+formatMoney(o.minBid),'error');
         else if(o.status==='purse') toast('Not enough purse! You have '+formatMoney(o.purse),'error');
-        else if(o.status==='closed') toast('Bidding is closed for this player','error');
-        // debug outcome
-        console.warn('[BID] non-retriable outcome', o, result);
+        else if(o.status==='closed') toast('Bidding closed for this player','error');
         break;
       }
 
-      // If this was a stale or commit-false, retry with backoff
-      if(attempt<maxAttempts){
-        const failCount = (G.telemetry && G.telemetry.txFailed) ? G.telemetry.txFailed : 0;
-        const base = 60;
-        const adaptive = Math.min(1000, failCount * 40);
-        const jitter = Math.floor(Math.random()*200);
-        const backoff = base + adaptive + jitter;
-        await new Promise(r=>setTimeout(r, backoff));
-        // refresh room from Firebase for diagnostics, but keep realCurrentTurnId/realCurrentIdx
-        // which represent the state we started the bid from — don't change those
-        try{ const fresh = await loadRoom(room.code); if(fresh) { G.room = fresh; console.debug('[BID] refreshed room for retry'); } }catch(e){ console.warn('[BID] loadRoom failed during backoff', e); }
+      // Stale or uncommitted — refresh and retry
+      if(attempt < maxAttempts){
+        await new Promise(r=>setTimeout(r, 80 + Math.floor(Math.random()*120)));
+        try{
+          const fresh = await loadRoom(room.code);
+          if(fresh){
+            G.room = fresh; room = G.room;
+            localAuction = room.auction || {};
+            cp = room.players[localAuction.currentIdx];
+          }
+        } catch(e){ console.warn('[BID] loadRoom failed on retry', e); }
         continue;
       }
     }
@@ -3585,34 +3573,52 @@ async function doUnsold(room, reason='unsold', opts={}){
 
 async function togglePauseAuction(){
   try{
-    const result=await transactRoom(room=>{
-      const a=room.auction;
-      if(!a||!a.active) return { outcome:{status:'inactive'} };
-      const dur=roomTimerMs(room);
-      if(a.paused){
-        const remaining=a.pausedRemainingMs || dur;
-        a.paused=false;
-        // On resume, reset timer from now with remaining duration
-        const resumeTs = Date.now();
-        a.timerDurMs = a.pausedRemainingMs || dur;
-        a.timerStart = resumeTs;
-        a.timerEndAt = resumeTs + a.timerDurMs;
-        a.pausedRemainingMs=0;
-        a.turnId=String(room.players?.[a.currentIdx]?.id||'')+'-'+genId();
-        room.logs.push({type:'system',text:'Auction resumed by host',createdAt:Date.now()});
-        return { outcome:{status:'resumed'} };
-      }
-      const elapsed=Date.now()- (a.timerStart || Date.now());
-      a.paused=true;
-      a.pausedRemainingMs=Math.max(0, (a.timerDurMs || dur) - elapsed);
-      a.timerEndAt=0;
-      room.logs.push({type:'system',text:'Auction paused by host',createdAt:Date.now()});
-      return { outcome:{status:'paused'} };
-    });
-    if(result.room) G.room=result.room;
-    if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
+    if(!G.room) return;
+    const a = G.room.auction;
+    if(!a || !a.active){ toast('Auction not active','error'); return; }
+    const dur = roomTimerMs(G.room);
+    let auctionUpdate = {};
+
+    if(a.paused){
+      // Resume
+      const resumeTs = Date.now();
+      const remaining = a.pausedRemainingMs || dur;
+      auctionUpdate = {
+        paused: false,
+        timerDurMs: remaining,
+        timerStart: resumeTs,
+        timerEndAt: resumeTs + remaining,
+        pausedRemainingMs: 0,
+        turnId: String(G.room.players?.[a.currentIdx]?.id||'') + '-' + genId()
+      };
+    } else {
+      // Pause
+      const elapsed = Date.now() - (Number(a.timerStart) || Date.now());
+      const remaining = Math.max(0, (a.timerDurMs || dur) - elapsed);
+      auctionUpdate = {
+        paused: true,
+        pausedRemainingMs: remaining,
+        timerEndAt: 0
+      };
+    }
+
+    // Write only auction fields — no full room transaction needed
+    await G.fbUpdate(G.fbRef(G.fbDb, 'rooms/'+G.roomCode+'/auction'), auctionUpdate);
+
+    // Log it
+    const logText = a.paused ? 'Auction resumed by host' : 'Auction paused by host';
+    G.fbRunTransaction(G.fbRef(G.fbDb,'rooms/'+G.roomCode+'/logs'), cur=>{
+      const logs = Array.isArray(cur) ? cur : [];
+      logs.push({type:'system', text:logText, createdAt:Date.now()});
+      return logs.slice(-200);
+    }).catch(()=>{});
+
+    // Apply locally
+    Object.assign(G.room.auction, auctionUpdate);
+    if(G.timerInterval){ clearInterval(G.timerInterval); G.timerInterval=null; lastTimerRoom=''; }
     lastAuctionRenderKey='';
     renderAuction();
+    toast(a.paused ? 'Auction resumed' : 'Auction paused', 'info');
   } catch(e){
     console.warn('Pause toggle failed', e);
     toast('Could not update pause state','error');
@@ -3622,17 +3628,19 @@ async function togglePauseAuction(){
 async function hostEnd(){
   if(!confirm('End auction now?')) return;
   try{
-    const result=await transactRoom(room=>{
-      if(!room.auction) return { outcome:{status:'inactive'} };
-      room.auction.active=false;
-      room.auction.ended=true;
-      room.auction.paused=false;
-      room.auction.pausedRemainingMs=0;
-      if(!Array.isArray(room.logs)) room.logs=[];
-      room.logs.push({type:'system',text:'Auction ended by host',createdAt:Date.now()});
-      return { outcome:{status:'ok'} };
+    // Direct targeted write — no full room transaction needed
+    await G.fbUpdate(G.fbRef(G.fbDb, 'rooms/'+G.roomCode+'/auction'), {
+      active: false, ended: true, paused: false, pausedRemainingMs: 0
     });
-    if(result.room) G.room=result.room;
+    G.fbRunTransaction(G.fbRef(G.fbDb,'rooms/'+G.roomCode+'/logs'), cur=>{
+      const logs = Array.isArray(cur) ? cur : [];
+      logs.push({type:'system', text:'Auction ended by host', createdAt:Date.now()});
+      return logs.slice(-200);
+    }).catch(()=>{});
+    if(G.room && G.room.auction){
+      G.room.auction.active=false; G.room.auction.ended=true;
+      G.room.auction.paused=false; G.room.auction.pausedRemainingMs=0;
+    }
     if(G.timerInterval){clearInterval(G.timerInterval);G.timerInterval=null;lastTimerRoom='';}
     showWinner(G.room);
   } catch(e){
