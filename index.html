@@ -1685,23 +1685,38 @@ async function maybeCleanupOldRooms(){
     const now = Date.now();
     let cleanedCount = 0;
     
+    console.log('[CLEANUP] Candidate rooms found:', Object.keys(rooms).length);
+    const updates = {};
+    const toDelete = [];
     for(const code in rooms){
       const room = rooms[code];
-      const lastActivity = room.lastActivity || room.createdAt || 0;
+      const lastActivity = room && (room.lastActivity || room.createdAt) || 0;
       const isInactive = (now - lastActivity) > ROOM_TTL;
-      const isComplete = room.ended || (room.auction?.ended && (!room.managers || room.managers.length === 0));
-      
+      const isComplete = !!(room && (room.ended || (room.auction && room.auction.ended && (!room.managers || room.managers.length === 0))));
       if(isInactive || isComplete){
-        try{
-          await G.fbUpdate(G.fbRef(G.fbDb, 'rooms/'+code), null);
-          cleanedCount++;
-          console.log('[CLEANUP] Deleted room:', code, { reason: isInactive ? 'inactive' : 'complete' });
-        } catch(e){
-          console.warn('[CLEANUP] Failed to delete', code, e);
-        }
+        updates[code] = null;
+        toDelete.push({ code, reason: isInactive ? 'inactive' : 'complete', lastActivity });
       }
     }
-    if(cleanedCount > 0) console.log('[CLEANUP] Removed', cleanedCount, 'rooms');
+
+    console.log('[CLEANUP] Rooms to delete:', toDelete);
+    // Safety checks before calling update()
+    if(!updates || typeof updates !== 'object' || Object.keys(updates).length === 0){
+      console.warn('[CLEANUP] Skipping cleanup because no valid updates exist');
+      return;
+    }
+
+    try{
+      // Use update on the parent 'rooms' node with an object mapping codes to null
+      await G.fbUpdate(G.fbRef(G.fbDb, 'rooms'), updates);
+      cleanedCount = Object.keys(updates).length;
+      for(const d of toDelete){
+        console.log('[CLEANUP] Deleted room:', d.code, { reason: d.reason, lastActivity: d.lastActivity });
+      }
+      if(cleanedCount > 0) console.log('[CLEANUP] Removed', cleanedCount, 'rooms');
+    } catch(e){
+      console.warn('[CLEANUP] Failed to apply updates', e);
+    }
   } catch(e){
     console.warn('[CLEANUP] Failed', e);
   }
