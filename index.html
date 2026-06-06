@@ -1743,12 +1743,14 @@ async function transactRoom(updateFn){
   try{
     const path = 'rooms/'+G.roomCode;
     console.log('[TRANSACT] Transaction path:', path);
-    // Fetch a pre-transaction snapshot for diagnostics
+    // Fetch a pre-transaction snapshot for diagnostics and possible seeding
+    let preValue = null;
     try{
       const preSnap = await G.fbGet(G.fbRef(G.fbDb, path));
       console.log('[TRANSACT] Pre-transaction snapshot exists:', preSnap.exists());
       if(preSnap.exists()){
-        const v = preSnap.val();
+        preValue = preSnap.val();
+        const v = preValue;
         console.log('[TRANSACT] Pre-snap managers:', (v && v.managers) ? (Array.isArray(v.managers) ? v.managers.length : Object.keys(v.managers).length) : 0);
       }
     } catch(psErr){
@@ -1760,9 +1762,14 @@ async function transactRoom(updateFn){
       console.log('[TRANSACT] current value:', current);
       console.log('[TRANSACT] typeof current:', typeof current);
       if(!current){
-        outcome = { status:'missing' };
-        console.warn('[TRANSACT] Room missing during transaction for path:', path, 'roomCode:', G.roomCode);
-        return;
+        if(preValue){
+          console.warn('[TRANSACT] current is null; seeding from preValue to proceed');
+          current = preValue;
+        } else {
+          outcome = { status:'missing' };
+          console.warn('[TRANSACT] Room missing during transaction for path:', path, 'roomCode:', G.roomCode);
+          return;
+        }
       }
       // log brief shape inside transaction
       try{ console.log('[TRANSACT] Inside transaction, current keys:', Object.keys(current).slice(0,10)); } catch(_){}
