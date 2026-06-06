@@ -1724,21 +1724,30 @@ function requireFirebaseRoomState(){
 async function transactRoom(updateFn){
   if(!requireFirebaseRoomState() || !G.fbRunTransaction) throw new Error('Firebase transactions unavailable');
   let outcome = { status:'empty' };
-  const result = await G.fbRunTransaction(G.fbRef(G.fbDb, 'rooms/'+G.roomCode), current=>{
-    if(!current){
-      outcome = { status:'missing' };
-      return;
-    }
-    ensureRoomStructures(current);
-    const next = updateFn(current);
-    if(!next){
-      if(!outcome.status || outcome.status==='empty') outcome = { status:'aborted' };
-      return;
-    }
-    outcome = next.outcome || { status:'ok' };
-    return current;
-  });
-  return { committed:result.committed, room:result.snapshot.exists() ? ensureRoomStructures(result.snapshot.val()) : null, outcome };
+  try{
+    const result = await G.fbRunTransaction(G.fbRef(G.fbDb, 'rooms/'+G.roomCode), current=>{
+      if(!current){
+        outcome = { status:'missing' };
+        console.warn('[TRANSACT] Room missing during transaction');
+        return;
+      }
+      ensureRoomStructures(current);
+      const next = updateFn(current);
+      if(!next){
+        if(!outcome.status || outcome.status==='empty') outcome = { status:'aborted' };
+        console.warn('[TRANSACT] Update aborted by callback');
+        return;
+      }
+      outcome = next.outcome || { status:'ok' };
+      console.log('[TRANSACT] Outcome set:', outcome);
+      return current;
+    });
+    console.log('[TRANSACT] Result:', { committed: result.committed, hasSnapshot: result.snapshot?.exists() });
+    return { committed:result.committed, room:result.snapshot.exists() ? ensureRoomStructures(result.snapshot.val()) : null, outcome };
+  } catch(e){
+    console.error('[TRANSACT] Error:', e.message, e);
+    throw e;
+  }
 }
 
 async function transactAuction(updateFn){
@@ -1803,18 +1812,25 @@ async function saveRoom(room){
 }
 
 async function loadRoom(code){
-  if(!requireFirebaseRoomState()) return null;
+  console.log('[LOAD] Fetching room:', code);
+  if(!requireFirebaseRoomState()){
+    console.warn('[LOAD] Firebase not ready');
+    return null;
+  }
   try{
     const snap = await G.fbGet(G.fbRef(G.fbDb, 'rooms/'+code));
+    console.log('[LOAD] Snapshot exists:', snap.exists());
     if(snap.exists()){
       const room = snap.val();
+      console.log('[LOAD] Got room data');
       room.code = room.code || code;
       return ensureRoomStructures(room);
     }
+    console.warn('[LOAD] Room not found:', code);
     return null;
   } catch(e){
-    console.warn('Firebase read failed', e);
-    toast('Could not check room in Firebase','error');
+    console.error('[LOAD] Error:', e.message);
+    toast('Firebase error: '+e.message,'error');
     return null;
   }
 }
@@ -2050,31 +2066,45 @@ async function joinRoom(){
       G.roomCode='';
       return;
     }
-    console.log('[JOIN] Room found, structure valid:', { code, name: existingRoom.name });
+    console.log('[JOIN] Room found:', { code, name: existingRoom.name, managers: existingRoom.managers?.length || 0 });
     
     // STEP 2: Now attempt to join via transaction
+    console.log('[JOIN] Starting transaction...');
     const result = await transactRoom(room=>{
-      const existing = room.managers.find(m=>m.name.toLowerCase()===name.toLowerCase());
+      console.log('[JOIN-TX] Inside callback, room managers:', room.managers?.length || 0);
+      
+      // FIX: Ensure managers is an array
+      if(!Array.isArray(room.managers)) {
+        console.warn('[JOIN-TX] Managers is not array, fixing');
+        room.managers = [];
+      }
+      
+      const existing = room.managers.find(m=>m.name?.toLowerCase?.()===name.toLowerCase());
       if(existing){
-        console.log('[JOIN] Existing manager found, updating presence');
+        console.log('[JOIN-TX] Existing manager found:', existing.id);
+        if(!room.presence) room.presence = {};
         room.presence[existing.id]={ lastSeen:Date.now(), online:true };
         return { outcome:{ status:'returning', id:existing.id } };
       }
-      console.log('[JOIN] New manager, adding to room');
+      
+      console.log('[JOIN-TX] New manager, adding to room');
+      if(!room.presence) room.presence = {};
       room.managers.push({ id:newId, name, purse: room.settings.purse, squad:[] });
       room.presence[newId]={ lastSeen:Date.now(), online:true };
       return { outcome:{ status:'joined', id:newId } };
     });
     
+    console.log('[JOIN] Transaction result:', { committed: result.committed, hasRoom: !!result.room, outcome: result.outcome });
+    
     if(!result.committed){
       console.warn('[JOIN] Transaction not committed');
-      toast('Could not join (conflict). Try again.','error');
+      toast('Could not join (another change happened). Try again.','error');
       G.roomCode='';
       return;
     }
     if(!result.room){
-      console.warn('[JOIN] Transaction result missing room');
-      toast('Room join failed','error');
+      console.warn('[JOIN] Transaction result missing room data');
+      toast('Room join failed (no data)','error');
       G.roomCode='';
       return;
     }
@@ -2083,8 +2113,9 @@ async function joinRoom(){
     joinOutcome = result.outcome;
     console.log('[JOIN] Success:', joinOutcome);
   } catch(e){
-    console.error('[JOIN] Exception:', e);
-    toast('Could not join room. Try again.','error');
+    console.error('[JOIN] Exception caught:', e.message, e.stack);
+    console.error('[JOIN] Full error:', e);
+    toast('Error: '+e.message || 'Could not join room. Try again.','error');
     G.roomCode = '';
     return;
   }
