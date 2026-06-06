@@ -3040,7 +3040,7 @@ function renderBidState(){
   const bidDisplay=document.getElementById('current-bid-display');
   if(bidDisplay) bidDisplay.textContent=formatMoney(a.currentBid);
   const leader=document.getElementById('bid-leader-display');
-  if(leader) leader.textContent=a.currentBidder?'ðŸ… '+a.currentBidder:'No bids yet â€” opens at '+formatMoney(cp.base);
+  if(leader) leader.textContent=a.currentBidder?('🏅 '+a.currentBidder):('No bids yet — opens at '+formatMoney(cp.base));
   const myM=room.managers.find(m=>m.id===G.myId);
   const squadSize=Number(room.settings?.squadSize)||15;
   const squadCount=myM && Array.isArray(myM.squad) ? myM.squad.length : 0;
